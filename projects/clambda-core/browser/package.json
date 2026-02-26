@@ -1,0 +1,12 @@
+{
+  "name": "clambda-playwright-bridge",
+  "version": "1.0.0",
+  "description": "Playwright bridge for Clambda browser automation",
+  "main": "playwright-bridge.js",
+  "scripts": {
+    "start": "node playwright-bridge.js"
+  },
+  "dependencies": {
+    "playwright": "^1.58.2"
+  }
+}

@@ -23,6 +23,24 @@
   ;; (clambda/telegram::%plist->ht ...)
   )
 
+(defpackage #:clambda-core/tests/browser
+  (:use #:cl #:parachute)
+  (:import-from #:clambda/browser
+                #:*browser-headless*
+                #:*browser-playwright-path*
+                #:*browser-bridge-script*
+                #:browser-running-p
+                #:browser-launch
+                #:browser-close
+                #:browser-navigate
+                #:browser-snapshot
+                #:browser-screenshot
+                #:browser-click
+                #:browser-type
+                #:browser-evaluate
+                #:register-browser-tools
+                #:make-browser-registry))
+
 (defpackage #:clambda-core/tests/irc
   (:use #:cl #:parachute)
   ;; Public API

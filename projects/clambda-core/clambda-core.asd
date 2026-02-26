@@ -7,11 +7,12 @@
 ;;;; agent registry, sub-agent spawning, channel protocol, HTTP API,
 ;;;; the Emacs-style configuration system (Layer 6a),
 ;;;; the Telegram Bot API channel (Layer 6b),
-;;;; and the IRC client channel (Layer 6c).
+;;;; the IRC client channel (Layer 6c),
+;;;; and the Playwright browser control module (Layer 7).
 
 (defsystem "clambda-core"
   :description "Core agent platform architecture in Common Lisp"
-  :version "0.6.0"
+  :version "0.7.0"
   :author "Gensym <gensym@cl-team>"
   :license "AGPL-3.0-or-later"
   :depends-on ("cl-llm"
@@ -45,7 +46,9 @@
                ;; Layer 6b: Telegram Bot API channel
                (:file "src/telegram")
                ;; Layer 6c: IRC client channel (raw sockets)
-               (:file "src/irc"))
+               (:file "src/irc")
+               ;; Layer 7: Playwright browser control
+               (:file "src/browser"))
   :in-order-to ((test-op (test-op "clambda-core/tests"))))
 
 (defsystem "clambda-core/tests"
@@ -57,4 +60,6 @@
                (:file "t/test-config")
                (:file "t/test-telegram")
                ;; Layer 6c: IRC tests
-               (:file "t/test-irc")))
+               (:file "t/test-irc")
+               ;; Layer 7: Browser tests
+               (:file "t/test-browser")))

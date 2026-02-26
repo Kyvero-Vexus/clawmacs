@@ -102,6 +102,8 @@
    #:list-tools
    ;; Macro
    #:define-tool
+   ;; Schema helpers
+   #:schema-plist->ht
    ;; Dispatch
    #:dispatch-tool-call
    #:tool-definitions-for-llm
@@ -478,6 +480,37 @@
    #:irc-build-line
    #:prefix-nick))
 
+;;; ── Browser control (Layer 7) ────────────────────────────────────────────────
+
+(defpackage #:clambda/browser
+  (:use #:cl)
+  (:import-from #:clambda/config
+                #:defoption #:register-channel)
+  (:import-from #:clambda/tools
+                #:register-tool! #:schema-plist->ht #:make-tool-registry)
+  (:import-from #:bordeaux-threads
+                #:make-lock #:with-lock-held)
+  (:export
+   ;; Config options
+   #:*browser-headless*
+   #:*browser-playwright-path*
+   #:*browser-bridge-script*
+   ;; Lifecycle
+   #:browser-launch
+   #:browser-close
+   #:browser-running-p
+   ;; Navigation and content
+   #:browser-navigate
+   #:browser-snapshot
+   #:browser-screenshot
+   ;; Interaction
+   #:browser-click
+   #:browser-type
+   #:browser-evaluate
+   ;; Tool registration
+   #:register-browser-tools
+   #:make-browser-registry))
+
 ;;; ── Top-level convenience package ────────────────────────────────────────────
 
 (defpackage #:clambda
@@ -594,6 +627,15 @@
                 #:irc-send-privmsg #:irc-join #:irc-part
                 #:parse-irc-line #:irc-build-line #:prefix-nick
                 #:*irc-send-interval* #:*irc-default-system-prompt*)
+  ;; Layer 7: Browser control
+  (:import-from #:clambda/browser
+                #:*browser-headless*
+                #:*browser-playwright-path*
+                #:*browser-bridge-script*
+                #:browser-launch #:browser-close #:browser-running-p
+                #:browser-navigate #:browser-snapshot #:browser-screenshot
+                #:browser-click #:browser-type #:browser-evaluate
+                #:register-browser-tools #:make-browser-registry)
   (:export
    ;; Agent
    #:agent #:make-agent
@@ -705,7 +747,15 @@
    #:start-irc #:stop-irc
    #:irc-send-privmsg #:irc-join #:irc-part
    #:parse-irc-line #:irc-build-line #:prefix-nick
-   #:*irc-send-interval* #:*irc-default-system-prompt*))
+   #:*irc-send-interval* #:*irc-default-system-prompt*
+   ;; Browser control (Layer 7)
+   #:*browser-headless*
+   #:*browser-playwright-path*
+   #:*browser-bridge-script*
+   #:browser-launch #:browser-close #:browser-running-p
+   #:browser-navigate #:browser-snapshot #:browser-screenshot
+   #:browser-click #:browser-type #:browser-evaluate
+   #:register-browser-tools #:make-browser-registry))
 
 ;;; ── User init package (for init.lisp) ────────────────────────────────────────
 ;;;
@@ -756,6 +806,14 @@
                 #:start-irc #:stop-irc
                 #:irc-send-privmsg #:irc-join #:irc-part
                 #:*irc-send-interval* #:*irc-default-system-prompt*)
+  (:import-from #:clambda/browser
+                #:*browser-headless*
+                #:*browser-playwright-path*
+                #:*browser-bridge-script*
+                #:browser-launch #:browser-close #:browser-running-p
+                #:browser-navigate #:browser-snapshot #:browser-screenshot
+                #:browser-click #:browser-type #:browser-evaluate
+                #:register-browser-tools #:make-browser-registry)
   (:export
    ;; Re-export everything imported so users can (use-package :clambda-user)
    ;; from a downstream package if desired.
@@ -790,4 +848,12 @@
    #:irc-connected-p
    #:start-irc #:stop-irc
    #:irc-send-privmsg #:irc-join #:irc-part
-   #:*irc-send-interval* #:*irc-default-system-prompt*))
+   #:*irc-send-interval* #:*irc-default-system-prompt*
+   ;; Browser control (Layer 7)
+   #:*browser-headless*
+   #:*browser-playwright-path*
+   #:*browser-bridge-script*
+   #:browser-launch #:browser-close #:browser-running-p
+   #:browser-navigate #:browser-snapshot #:browser-screenshot
+   #:browser-click #:browser-type #:browser-evaluate
+   #:register-browser-tools #:make-browser-registry))

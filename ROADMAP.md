@@ -253,9 +253,9 @@ All Layer 6a tasks complete as of 2026-02-26:
 14. ✅ **`clambda-core.asd` updated** to v0.4.0; `src/config` added as last component
 15. ✅ **`clambda` package updated** — all config symbols re-exported
 
-## ✅ Layer 6b Complete — Telegram Bot API Channel
+## ✅ Layer 6b Complete & Verified — Telegram Bot API Channel
 
-All Layer 6b tasks complete as of 2026-02-26:
+All Layer 6b tasks complete and verified 2026-02-26:
 
 1. ✅ **`clambda/telegram` module** — `src/telegram.lisp`; loaded after `src/config`
 2. ✅ **Long-polling loop** — `bt:make-thread`; `getUpdates` with 5s timeout for responsive shutdown
@@ -275,9 +275,9 @@ All Layer 6b tasks complete as of 2026-02-26:
 
 ---
 
-## ✅ Layer 6c Complete — IRC Client Channel
+## ✅ Layer 6c Complete & Verified — IRC Client Channel
 
-All Layer 6c tasks complete as of 2026-02-26:
+All Layer 6c tasks complete and verified 2026-02-26:
 
 1. ✅ **`clambda/irc` module** — `src/irc.lisp` (raw sockets, no external IRC library)
 2. ✅ **Raw IRC protocol** — `usocket` for TCP, `cl+ssl` for TLS
@@ -312,6 +312,50 @@ All Layer 6c tasks complete as of 2026-02-26:
 
 ---
 
+---
+
+## ✅ Layer 7 Complete — Browser Control
+
+All Layer 7 tasks complete as of 2026-02-26:
+
+1. ✅ **`clambda/browser` module** — `src/browser.lisp`
+2. ✅ **Playwright bridge script** — `browser/playwright-bridge.js` (~150 lines Node.js)
+   - JSON-over-stdin/stdout protocol (one request/response per line)
+   - Commands: `launch`, `navigate`, `snapshot`, `screenshot`, `click`, `type`, `evaluate`, `close`
+   - Uses `page.locator('body').ariaSnapshot()` for modern accessibility tree (Playwright ≥1.47)
+   - Graceful fallback: URL + title + body text if ariaSnapshot unavailable
+3. ✅ **CL subprocess management** — `uiop:launch-program`, mutex-guarded sync protocol
+4. ✅ **Public API:**
+   - `(browser-launch &key headless)` — starts the Node.js subprocess + Chromium
+   - `(browser-navigate url)` — navigate to URL
+   - `(browser-snapshot)` — ARIA accessibility tree as YAML text
+   - `(browser-screenshot &optional path)` — base64 PNG or saved file
+   - `(browser-click selector)` — CSS selector click
+   - `(browser-type selector text)` — fill input
+   - `(browser-evaluate js)` — arbitrary JS evaluation
+   - `(browser-close)` — clean shutdown
+5. ✅ **Config options** — `*browser-headless*`, `*browser-playwright-path*`, `*browser-bridge-script*`
+6. ✅ **Tool registration** — `register-browser-tools`, `make-browser-registry`
+   - 6 tools: `browser_navigate`, `browser_snapshot`, `browser_screenshot`, `browser_click`, `browser_type`, `browser_evaluate`
+7. ✅ **`register-channel :browser`** — EQL-specialized method for init.lisp integration
+8. ✅ **28/28 tests** in `t/test-browser.lisp`:
+   - 3 config tests
+   - 2 lifecycle (safe before launch) tests
+   - 8 tool registry tests
+   - 1 JSON protocol round-trip test (mock subprocess)
+   - 1 live integration test (launch → navigate → snapshot → evaluate → screenshot → close)
+9. ✅ **`clambda-core.asd` updated** to v0.7.0; browser component added
+10. ✅ **`clambda` + `clambda-user` packages updated** — all browser symbols re-exported
+
+**Prerequisites for live use:**
+```bash
+cd projects/clambda-core/browser/
+npm install            # install playwright npm package
+npx playwright install chromium   # ~200MB one-time download
+```
+
+---
+
 ## What's Left
 
 ### For Channel Plugins (Discord, etc.)
@@ -326,12 +370,7 @@ All Layer 6c tasks complete as of 2026-02-26:
    - Inject skill instructions into agent system prompt
    - Effort: Medium (2–3 days)
 
-3. **Browser control** — `clambda/browser`
-   - Shell out to Playwright or Puppeteer (Node.js)
-   - Or wrap a headless browser library
-   - Effort: Large (1–2 weeks)
-
-4. **Cron / scheduled tasks** — `clambda/cron`
+3. **Cron / scheduled tasks** — `clambda/cron`
    - Periodic agent triggers
    - Integrate with bordeaux-threads sleep-loop or a proper scheduler
    - Effort: Small-Medium (1–2 days)

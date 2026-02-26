@@ -9,6 +9,10 @@
 ## Index
 
 | # | Date | Category | Summary |
+| 22 | 2026-02-26 | asdf/packaging | `schema-plist->ht` missing from `clambda/tools` exports — broke `clambda/browser` package definition |
+| 23 | 2026-02-26 | idiom/playwright | `page.accessibility.snapshot()` removed in Playwright >=1.47; use `page.locator('body').ariaSnapshot()` |
+| 24 | 2026-02-26 | idiom/pathname | `merge-pathnames` on result of `asdf:system-relative-pathname` doubled the path segment — don't wrap, use directly |
+| 25 | 2026-02-26 | idiom/parachute | `skip-on (not (my-fn))` fails — parachute's skip-on walks `and/or/not` combinators recursively; function calls as the innermost leaf are not supported; use `(when ...)` inside the test body instead |
 | 20 | 2026-02-26 | packages | `clambda/irc` placed before `clambda/config` in packages.lisp — forward-ref error since it imports `register-channel` from config |
 | 21 | 2026-02-26 | idiom/sbcl | Loading test package that uses `#:parachute` before parachute is loaded → PACKAGE-DOES-NOT-EXIST |
 | 18 | 2026-02-26 | packages | `merge-user-tools!` defined in config.lisp but omitted from `clambda/config` exports |
@@ -267,3 +271,57 @@ design struct slot names and public API names independently; use `:conc-name` to
 **Fix:** Always `(ql:quickload :parachute :silent t)` BEFORE loading any test package that `(:use #:parachute)`. Or load the full `clambda-core/tests` ASDF system instead of individual files.
 **Lesson:** Test packages must have their dependencies explicitly loaded before `defpackage` is evaluated. Don't assume a test runner has pre-loaded all test dependencies. When writing script-driven test runners, always quickload test dependencies at the top.
 **Tags:** #packages #parachute #testing #sbcl
+
+---
+
+## Category: asdf/packaging
+
+### #22 — 2026-02-26
+**What:** `schema-plist->ht` was defined in `clambda/tools` but not exported. When the new `clambda/browser` package tried to `(:import-from #:clambda/tools #:schema-plist->ht)`, SBCL raised "no symbol named SCHEMA-PLIST->HT in CLAMBDA/TOOLS".
+**Why:** `schema-plist->ht` was added as a helper function but never added to the `:export` list in the package definition.
+**Fix:** Added `#:schema-plist->ht` to the `:export` section of `clambda/tools` in `packages.lisp`.
+**Lesson:** When adding a new function to an existing module that other packages will need, immediately update ALL export lists. Grep for all packages that import from the modified package to catch missed updates.
+**Tags:** #packages #exports #tools
+
+---
+
+## Category: idiom/playwright
+
+### #23 — 2026-02-26
+**What:** Used `page.accessibility.snapshot()` in the playwright bridge. Got runtime error: "Cannot read properties of undefined (reading 'snapshot')" — `page.accessibility` is undefined.
+**Why:** Playwright deprecated and removed the `page.accessibility` API in v1.31. Since we're using Playwright v1.58.2, `page.accessibility` no longer exists.
+**Fix:** Use `page.locator('body').ariaSnapshot()` which is the modern Playwright API (available since v1.47). It returns a YAML string describing the ARIA accessibility tree.
+**Lesson:** Playwright's API evolves. Always check the version's changelog when using accessibility/aria APIs. The `accessibility` namespace was removed; use `locator().ariaSnapshot()` instead.
+**Tags:** #playwright #browser #accessibility #api-changes
+
+---
+
+## Category: idiom/pathname
+
+### #24 — 2026-02-26
+**What:** Used `(merge-pathnames "browser/playwright-bridge.js" (asdf:system-relative-pathname :clambda-core "browser/playwright-bridge.js"))` — the result had double `browser/browser/` path segment.
+**Why:** `asdf:system-relative-pathname` already returns the full path including the relative component. Wrapping it in `merge-pathnames` with the same relative component appended it again.
+**Fix:** Use `asdf:system-relative-pathname` directly without wrapping in `merge-pathnames`:
+  ```lisp
+  (asdf:system-relative-pathname :clambda-core "browser/playwright-bridge.js")
+  ```
+**Lesson:** `asdf:system-relative-pathname` returns the fully resolved path. Don't wrap it in `merge-pathnames` with the same relative component — that doubles the path.
+**Tags:** #asdf #pathnames #idiom
+
+---
+
+## Category: idiom/parachute
+
+### #25 — 2026-02-26
+**What:** Used `(skip-on (not (my-function)) "reason")` in a parachute test. Got runtime error: "MY-FUNCTION fell through ECASE expression. Wanted one of (AND OR NOT)."
+**Why:** Parachute's `skip-on` condition DSL recursively processes `and`, `or`, `not` forms to build a condition tree. When it recurses into `(not (my-function))`, the `not` is recognized, but `(my-function)` has car `my-function` which is not a recognized combinator — so it falls through the ecase.
+**Fix:** Don't use `skip-on` with function calls. Instead, use a simple `(when (condition) ...)` or `(unless ...)` guard inside the test body:
+  ```lisp
+  (define-test "my-test"
+    (when (my-function)
+      (true t))
+    (unless (my-function)
+      (true t))) ; vacuous pass
+  ```
+**Lesson:** Parachute's `skip-on` is a compile-time DSL for feature flags (`and/or/not` of keywords or forms that the DSL recognizes), not a general boolean expression evaluator. For runtime conditions, use `when`/`unless` inside the test body.
+**Tags:** #parachute #testing #skip-on #idiom

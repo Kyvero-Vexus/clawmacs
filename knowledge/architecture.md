@@ -439,6 +439,88 @@ Reset to 5s on successful RPL_WELCOME (001)
 
 ---
 
+## Layer 7: Browser Control (`clambda/browser`)
+
+**File:** `src/browser.lisp`
+**Package:** `clambda/browser`
+**Loaded:** after `clambda/irc` (depends on `clambda/config` for `defoption`)
+**New file:** `browser/playwright-bridge.js` (Node.js subprocess)
+**New dir:** `browser/` with `package.json` + `node_modules/playwright`
+
+Browser automation via a Playwright Node.js subprocess. Synchronous JSON-over-stdin/stdout protocol.
+
+### Config Options
+
+```lisp
+*browser-headless*        ; bool, default T — run without visible window
+*browser-playwright-path* ; string, default "node" — Node.js executable
+*browser-bridge-script*   ; string — path to playwright-bridge.js (auto-resolved)
+```
+
+### Key APIs
+
+```lisp
+;;; Lifecycle
+(browser-launch &key headless)  ; starts subprocess + Chromium
+(browser-close)                 ; clean shutdown (safe if not running)
+(browser-running-p)             ; T if subprocess is alive
+
+;;; Navigation & content
+(browser-navigate url)          ; go to URL (waits for DOMContentLoaded)
+(browser-snapshot)              ; ARIA tree as YAML text (ariaSnapshot API)
+(browser-screenshot &optional path)  ; base64 PNG string or saved file
+
+;;; Interaction
+(browser-click selector)        ; click by CSS selector
+(browser-type selector text)    ; fill input (clears first)
+(browser-evaluate js)           ; eval JS, return serialized result
+
+;;; Tool registration
+(register-browser-tools registry)  ; add 6 browser tools to any registry
+(make-browser-registry)            ; new registry with just browser tools
+```
+
+### Subprocess Protocol
+
+```
+CL side                          Node.js bridge
+--------                         --------------
+write JSON line to stdin  ─────► parse JSON command
+wait for stdout line      ◄───── write JSON response line
+
+Request:  { "id": "br1", "command": "navigate", "params": { "url": "..." } }
+Response: { "id": "br1", "ok": true, "result": null }
+Error:    { "id": "br1", "ok": false, "error": "message" }
+```
+
+All commands are synchronous (one in-flight at a time, guarded by `*browser-lock*` mutex).
+
+### Agent Tool Names
+
+| Tool name | CL function |
+|-----------|-------------|
+| `browser_navigate` | `browser-navigate` |
+| `browser_snapshot` | `browser-snapshot` |
+| `browser_screenshot` | `browser-screenshot` |
+| `browser_click` | `browser-click` |
+| `browser_type` | `browser-type` |
+| `browser_evaluate` | `browser-evaluate` |
+
+### Setup
+
+```bash
+# One-time setup (in projects/clambda-core/browser/):
+npm install
+npx playwright install chromium   # ~200MB
+
+# In init.lisp:
+(register-channel :browser :headless t)
+;; Then at startup:
+(browser-launch)
+```
+
+---
+
 ## 5. Extension Points for OpenClaw Rewrite
 
 ### What's already implemented (as of Layer 5 Phase 3)
@@ -469,9 +551,9 @@ Reset to 5s on successful RPL_WELCOME (001)
 | Emacs-style config (init.lisp) | ✅ Done: `clambda/config` Layer 6a | — |
 | Telegram channel plugin | ✅ Done: `clambda/telegram` Layer 6b | — |
 | IRC channel plugin | ✅ Done: `clambda/irc` Layer 6c | — |
+| Web browser control | ✅ Done: `clambda/browser` Layer 7 | — |
 | Skills system (SKILL.md loading) | Not implemented | High |
 | Discord channel plugin | Not implemented | Medium |
-| Web browser control | Not implemented | Low |
 | Canvas / UI presentation | Not implemented | Low |
 | Node pairing (mobile/devices) | Not implemented | Low |
 | Cron / scheduled tasks | Not implemented | Medium |
