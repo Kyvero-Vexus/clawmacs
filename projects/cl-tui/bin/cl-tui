@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+# cl-tui — Launch the TUI chat interface
+set -e
+
+export PATH="$HOME/.guix-profile/bin:$PATH"
+export LD_LIBRARY_PATH="/lib/x86_64-linux-gnu:$LD_LIBRARY_PATH"
+
+exec sbcl --noinform \
+  --eval "(require :asdf)" \
+  --eval "(asdf:clear-source-registry)" \
+  --eval "(asdf:initialize-source-registry)" \
+  --eval "(asdf:load-system :cl-tui)" \
+  --eval "(cl-tui:run-tui)" \
+  --eval "(sb-ext:exit)"
