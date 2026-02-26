@@ -222,6 +222,37 @@ All Layer 5 tasks complete as of 2026-02-26:
 
 Clambda is now functionally comparable to the core of OpenClaw, minus channel plugins and browser control.
 
+---
+
+## ✅ Layer 6a Complete — Emacs-Style Configuration System
+
+All Layer 6a tasks complete as of 2026-02-26:
+
+1. ✅ **`clambda/config` module** — new `src/config.lisp`, loaded last in clambda-core
+2. ✅ **`*clambda-home*`** — resolved from `$CLAMBDA_HOME` or `~/.clambda/`, setf-able
+3. ✅ **`load-user-config`** — finds and loads `init.lisp` in `clambda-user` package;
+   catches/reports errors without crashing; returns T on success, NIL on miss/error
+4. ✅ **`defoption` macro** — Emacs defcustom analog; DEFVAR + option registry entry;
+   all options setf-able from init.lisp
+5. ✅ **Built-in options** — `*default-model*`, `*default-max-turns*`, `*default-stream*`,
+   `*log-level*`, `*startup-message*` — all registered in `*option-registry*`
+6. ✅ **`describe-options`** — prints all known options with types, current values, docs
+7. ✅ **Hook system** — `add-hook`, `remove-hook`, `run-hook`, `run-hook-with-args`;
+   error isolation per hook fn; standard hook vars:
+   `*after-init-hook*`, `*before-agent-turn-hook*`, `*after-tool-call-hook*`, `*channel-message-hook*`
+8. ✅ **`register-channel` generic** — default method stores config in `*registered-channels*`;
+   channel plugins add EQL-specialised methods to start their transport
+9. ✅ **`define-user-tool` macro** — keyword-style tool definition (name, description,
+   parameters plist, function); registers into `*user-tool-registry*`
+10. ✅ **`merge-user-tools!`** — copies all user tools from `*user-tool-registry*` into
+    any target registry (call at agent-creation time)
+11. ✅ **`clambda-user` package** — default `*package*` for init.lisp; imports all config
+    and core API symbols; no sandboxing, full CL available
+12. ✅ **`example-init.lisp`** — fully commented example covering all features
+13. ✅ **24/24 integration tests** in `t/test-config.lisp` — all pass
+14. ✅ **`clambda-core.asd` updated** to v0.4.0; `src/config` added as last component
+15. ✅ **`clambda` package updated** — all config symbols re-exported
+
 ## What's Left
 
 ### For Channel Plugins (Telegram, Discord, etc.)

@@ -9,6 +9,8 @@
 ## Index
 
 | # | Date | Category | Summary |
+| 18 | 2026-02-26 | packages | `merge-user-tools!` defined in config.lisp but omitted from `clambda/config` exports |
+| 19 | 2026-02-26 | idiom/clos | `(find-class '(eql :kw))` in `find-method` — wrong; use `sb-mop:intern-eql-specializer` |
 |---|------|---------|---------|
 | 1 | 2026-02-26 | runtime/mcclim | `redisplay-frame-pane` before `run-frame-top-level` → NIL crash |
 | 2 | 2026-02-26 | idiom/streams | `get-output-stream-string` clears the stream on every call |
@@ -219,3 +221,25 @@ design struct slot names and public API names independently; use `:conc-name` to
 **Fix:** Replace `bt:condition-broadcast` with `bt:condition-notify`. For the close case, a single notify is sufficient since receivers check the `open-p` slot and re-enter the wait or exit.
 **Lesson:** bordeaux-threads is minimal. Check the full export list with `(loop for s being the external-symbols of :bordeaux-threads ...)` before assuming POSIX names exist. There is no `condition-broadcast`, `condition-signal`, or `thread-join` — use `bt:condition-notify` and `bt:join-thread` respectively.
 **Tags:** #bordeaux-threads #threads #conditions #idiom
+
+---
+
+## Category: packages
+
+### #18 — 2026-02-26
+**What:** `merge-user-tools!` was defined and used in `src/config.lisp` but omitted from the `clambda/config` package's `:export` list in `src/packages.lisp`. Caused a compile error in the test file when it referenced `clambda/config:merge-user-tools!`.
+**Why:** Added the function after drafting the initial export list; forgot to update the exports.
+**Fix:** Added `#:merge-user-tools!` to the `:export` list of `clambda/config` in `packages.lisp`, and also to the `clambda` package's `:import-from` and `:export` sections, and to `clambda-user`.
+**Lesson:** When adding a function to a module after initial package design, immediately update ALL three places: (1) package `:export`, (2) top-level `clambda` `:import-from` + `:export`, (3) `clambda-user` if it's user-facing. A grep for the function name across packages.lisp catches omissions.
+**Tags:** #packages #exports #config
+
+---
+
+## Category: idiom/clos
+
+### #19 — 2026-02-26
+**What:** In a test, tried to remove a method with an EQL specializer using `(find-class '(eql :custom-plugin))`. SBCL signalled a type error: "Value of `(EQL :CUSTOM-PLUGIN)` is `(EQL :CUSTOM-PLUGIN)`, not a SYMBOL."
+**Why:** `find-class` expects a symbol (class name), not an EQL specializer form. `(find-class '(eql :custom-plugin))` passes the list `(eql :custom-plugin)` as the class name, which doesn't designate a class.
+**Fix:** Use `sb-mop:intern-eql-specializer :custom-plugin` to get the EQL specializer object, then pass it to `find-method`. Wrap in `ignore-errors` for cleanup code.
+**Lesson:** To remove a method with an EQL specializer in SBCL: `(find-method gf '() (list (sb-mop:intern-eql-specializer val)) nil)`. The standard `find-class` is only for named classes. For EQL specializers, use the MOP.
+**Tags:** #clos #mop #methods #eql-specializer

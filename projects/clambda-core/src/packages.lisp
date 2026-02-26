@@ -321,6 +321,52 @@
    #:http-session-get
    #:http-session-create))
 
+;;; ── Config system ────────────────────────────────────────────────────────────
+;;;
+;;; Emacs-style configuration: *clambda-home*, load-user-config, defoption,
+;;; hook system, register-channel generic.
+
+(defpackage #:clambda/config
+  (:use #:cl)
+  (:import-from #:clambda/tools
+                #:tool-registry #:make-tool-registry
+                #:register-tool!)
+  (:export
+   ;; Config directory
+   #:*clambda-home*
+   #:clambda-home
+   ;; Loading
+   #:load-user-config
+   #:user-config-loaded-p
+   ;; Options system
+   #:defoption
+   #:*option-registry*
+   #:describe-options
+   ;; Hook system
+   #:add-hook
+   #:remove-hook
+   #:run-hook
+   #:run-hook-with-args
+   ;; Standard hook variables
+   #:*after-init-hook*
+   #:*before-agent-turn-hook*
+   #:*after-tool-call-hook*
+   #:*channel-message-hook*
+   ;; Channel registration
+   #:register-channel
+   #:*registered-channels*
+   ;; User-facing tool definition (keyword-style, registers to *user-tool-registry*)
+   #:define-user-tool
+   #:register-user-tool!
+   #:merge-user-tools!
+   #:*user-tool-registry*
+   ;; Built-in options (defoption-defined variables)
+   #:*default-model*
+   #:*default-max-turns*
+   #:*default-stream*
+   #:*log-level*
+   #:*startup-message*))
+
 ;;; ── Top-level convenience package ────────────────────────────────────────────
 
 (defpackage #:clambda
@@ -400,6 +446,18 @@
                 #:server-running-p #:restart-server
                 #:*server* #:*http-sessions*
                 #:http-session-get #:http-session-create)
+  (:import-from #:clambda/config
+                #:*clambda-home* #:clambda-home
+                #:load-user-config #:user-config-loaded-p
+                #:defoption #:*option-registry* #:describe-options
+                #:add-hook #:remove-hook #:run-hook #:run-hook-with-args
+                #:*after-init-hook* #:*before-agent-turn-hook*
+                #:*after-tool-call-hook* #:*channel-message-hook*
+                #:register-channel #:*registered-channels*
+                #:define-user-tool #:register-user-tool!
+                #:merge-user-tools! #:*user-tool-registry*
+                #:*default-model* #:*default-max-turns*
+                #:*default-stream* #:*log-level* #:*startup-message*)
   (:export
    ;; Agent
    #:agent #:make-agent
@@ -474,4 +532,77 @@
    #:*default-port* #:start-server #:stop-server
    #:server-running-p #:restart-server
    #:*server* #:*http-sessions*
-   #:http-session-get #:http-session-create))
+   #:http-session-get #:http-session-create
+   ;; Config system
+   #:*clambda-home* #:clambda-home
+   #:load-user-config #:user-config-loaded-p
+   #:defoption #:*option-registry* #:describe-options
+   #:add-hook #:remove-hook #:run-hook #:run-hook-with-args
+   #:*after-init-hook* #:*before-agent-turn-hook*
+   #:*after-tool-call-hook* #:*channel-message-hook*
+   #:register-channel #:*registered-channels*
+   #:define-user-tool #:register-user-tool!
+   #:merge-user-tools! #:*user-tool-registry*
+   #:*default-model* #:*default-max-turns*
+   #:*default-stream* #:*log-level* #:*startup-message*))
+
+;;; ── User init package (for init.lisp) ────────────────────────────────────────
+;;;
+;;; This package is the default *package* when init.lisp is loaded.
+;;; It gives users access to all public Clambda API without qualification.
+;;; Full CL is available — no sandboxing.
+
+(defpackage #:clambda-user
+  (:use #:cl)
+  ;; Config API — the most important things for init.lisp
+  (:import-from #:clambda/config
+                #:defoption
+                #:add-hook #:remove-hook #:run-hook #:run-hook-with-args
+                #:*after-init-hook* #:*before-agent-turn-hook*
+                #:*after-tool-call-hook* #:*channel-message-hook*
+                #:register-channel #:*registered-channels*
+                #:define-user-tool #:register-user-tool!
+                #:merge-user-tools! #:*user-tool-registry*
+                #:*default-model* #:*default-max-turns*
+                #:*default-stream* #:*log-level* #:*startup-message*
+                #:describe-options #:*option-registry*
+                #:*clambda-home* #:clambda-home
+                #:load-user-config)
+  ;; Core clambda API — so users can make-agent etc. from init.lisp
+  (:import-from #:clambda/tools
+                #:tool-registry #:make-tool-registry
+                #:register-tool! #:find-tool #:list-tools
+                #:define-tool)
+  (:import-from #:clambda/agent
+                #:agent #:make-agent
+                #:agent-name #:agent-system-prompt
+                #:agent-client #:agent-tool-registry)
+  (:import-from #:clambda/session
+                #:session #:make-session)
+  (:import-from #:clambda/registry
+                #:define-agent #:register-agent #:find-agent)
+  (:import-from #:cl-llm
+                #:make-client)
+  (:export
+   ;; Re-export everything imported so users can (use-package :clambda-user)
+   ;; from a downstream package if desired.
+   #:defoption
+   #:add-hook #:remove-hook #:run-hook #:run-hook-with-args
+   #:*after-init-hook* #:*before-agent-turn-hook*
+   #:*after-tool-call-hook* #:*channel-message-hook*
+   #:register-channel #:*registered-channels*
+   #:define-user-tool #:register-user-tool!
+   #:merge-user-tools! #:*user-tool-registry*
+   #:*default-model* #:*default-max-turns*
+   #:*default-stream* #:*log-level* #:*startup-message*
+   #:describe-options #:*option-registry*
+   #:*clambda-home* #:clambda-home
+   #:tool-registry #:make-tool-registry
+   #:register-tool! #:find-tool #:list-tools
+   #:define-tool
+   #:agent #:make-agent
+   #:agent-name #:agent-system-prompt
+   #:agent-client #:agent-tool-registry
+   #:session #:make-session
+   #:define-agent #:register-agent #:find-agent
+   #:make-client))

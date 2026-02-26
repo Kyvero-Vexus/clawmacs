@@ -248,6 +248,99 @@ User enters command "Send <text>"
 
 ---
 
+---
+
+## Layer 6a: Emacs-Style Configuration System (`clambda/config`)
+
+**File:** `src/config.lisp`  
+**Package:** `clambda/config`  
+**Loaded:** last in `clambda-core.asd` (depends on `clambda/tools` being loaded first)
+
+The configuration model: users write Common Lisp in `~/.clambda/init.lisp`, which is
+loaded at startup. No JSON, no YAML, no DSL. Full CL. Trust the user.
+
+### Key APIs
+
+```lisp
+;;; Config directory
+*clambda-home*           ; pathname variable; resolved from $CLAMBDA_HOME or ~/.clambda/
+(clambda-home)           ; function accessor
+
+;;; Loading
+(load-user-config)       ; finds init.lisp, loads in clambda-user package, runs hooks
+(user-config-loaded-p)   ; T after successful load
+
+;;; Options (Emacs defcustom analog)
+(defoption *default-model* "google/gemma-3-4b"
+  :type string :doc "Default LLM model.")
+(describe-options)       ; print all known options to stdout
+*option-registry*        ; alist of (sym :default val :type T :doc "...")
+
+;;; Hook system
+(add-hook '*after-init-hook* #'my-fn)      ; appends fn
+(remove-hook '*after-init-hook* #'my-fn)   ; removes fn
+(run-hook '*after-init-hook*)              ; calls all fns, catches errors
+(run-hook-with-args '*channel-message-hook* ch msg)
+
+;;; Standard hooks
+*after-init-hook*         ; () — after init.lisp loads
+*before-agent-turn-hook*  ; (session user-msg) — before each agent-turn
+*after-tool-call-hook*    ; (tool-name result) — after each tool call
+*channel-message-hook*    ; (channel message) — on inbound channel messages
+
+;;; Channel registration
+(register-channel :telegram :token "..." :allowed-users '(12345))
+*registered-channels*    ; alist of (keyword . args-plist)
+
+;;; User tool registration (init.lisp syntax)
+(define-user-tool my-tool
+  :description "..." 
+  :parameters '((:name "x" :type "string" :description "..."))
+  :function #'my-handler)
+*user-tool-registry*           ; tool-registry populated by define-user-tool
+(merge-user-tools! registry)   ; copy user tools into another registry
+```
+
+### `clambda-user` package
+
+init.lisp is loaded with `*package*` bound to `clambda-user`. This package:
+- `:use #:cl` (full CL available, no sandboxing)
+- Imports all config API symbols (defoption, add-hook, register-channel, etc.)
+- Imports core clambda API (make-agent, make-client, define-tool, etc.)
+- Users can call any clambda function without package qualification
+
+### Sequence: startup with config
+
+```
+1. System loads (ql:quickload :clambda-core)
+2. Caller invokes (clambda/config:load-user-config)
+3.   → finds ~/.clambda/init.lisp
+4.   → binds *package* to clambda-user
+5.   → (load init.lisp)
+6.      init.lisp runs: sets options, registers channels, defines tools, adds hooks
+7.   → runs *after-init-hook* functions
+8. Caller creates agent/session using *default-model* and *user-tool-registry*
+```
+
+### register-channel: plugin pattern
+
+Channel plugins (telegram, irc, etc.) specialise `register-channel`:
+
+```lisp
+;; In clambda/channels/telegram.lisp:
+(defmethod clambda/config:register-channel ((type (eql :telegram)) &rest args
+                                            &key token allowed-users &allow-other-keys)
+  (let ((chan (make-telegram-channel :token token :allowed-users allowed-users)))
+    (setf *telegram-channel* chan)
+    (start-polling chan))
+  ;; Store config in *registered-channels* via default method:
+  (call-next-method))
+```
+
+Users just write `(register-channel :telegram :token "...")` in init.lisp.
+
+---
+
 ## 5. Extension Points for OpenClaw Rewrite
 
 ### What's already implemented (as of Layer 5 Phase 3)
@@ -275,6 +368,7 @@ User enters command "Send <text>"
 
 | OpenClaw Feature | CL Gap | Priority |
 |-----------------|--------|---------|
+| Emacs-style config (init.lisp) | ✅ Done: `clambda/config` Layer 6a | — |
 | Skills system (SKILL.md loading) | Not implemented | High |
 | Telegram channel plugin | Not implemented | Medium |
 | Discord channel plugin | Not implemented | Medium |

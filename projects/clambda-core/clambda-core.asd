@@ -4,11 +4,12 @@
 ;;;; Provides: agent definition, session management, tool protocol,
 ;;;; built-in tools (exec, read, write, list-dir, web-fetch),
 ;;;; structured logging, workspace memory, the agent loop,
-;;;; agent registry, sub-agent spawning, channel protocol, HTTP API.
+;;;; agent registry, sub-agent spawning, channel protocol, HTTP API,
+;;;; and the Emacs-style configuration system (Layer 6a).
 
 (defsystem "clambda-core"
   :description "Core agent platform architecture in Common Lisp"
-  :version "0.3.0"
+  :version "0.4.0"
   :author "Gensym <gensym@cl-team>"
   :license "MIT"
   :depends-on ("cl-llm"
@@ -33,7 +34,9 @@
                (:file "src/registry")
                (:file "src/subagents")
                (:file "src/channels")
-               (:file "src/http-server"))
+               (:file "src/http-server")
+               ;; Layer 6a: Emacs-style config system
+               (:file "src/config"))
   :in-order-to ((test-op (test-op "clambda-core/tests"))))
 
 (defsystem "clambda-core/tests"
@@ -41,4 +44,5 @@
   :depends-on ("clambda-core")
   :serial t
   :components ((:file "t/packages")
-               (:file "t/smoke-test")))
+               (:file "t/smoke-test")
+               (:file "t/test-config")))
