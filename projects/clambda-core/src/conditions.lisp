@@ -52,6 +52,24 @@
              (write-string (agent-loop-error-message c) s)))
   (:documentation "Error in the agent loop (e.g., max turns exceeded)."))
 
+;;; ── Budget errors ────────────────────────────────────────────────────────────
+
+(define-condition budget-exceeded (clambda-error)
+  ((kind    :initarg :kind    :reader budget-exceeded-kind
+            :documentation "Either :tokens or :turns.")
+   (limit   :initarg :limit   :reader budget-exceeded-limit)
+   (current :initarg :current :reader budget-exceeded-current))
+  (:report (lambda (c s)
+             (format s "Budget exceeded: ~a limit ~a reached (current: ~a)"
+                     (budget-exceeded-kind c)
+                     (budget-exceeded-limit c)
+                     (budget-exceeded-current c))))
+  (:documentation
+   "Signalled when a session exceeds its configured token or turn budget.
+KIND  — :tokens or :turns.
+LIMIT — the configured maximum.
+CURRENT — the actual value that exceeded it."))
+
 ;;; ── Restart names ────────────────────────────────────────────────────────────
 
 ;; These are just symbols used as restart names — no need to define them specially.

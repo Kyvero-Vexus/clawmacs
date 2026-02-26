@@ -250,33 +250,39 @@ User enters command "Send <text>"
 
 ## 5. Extension Points for OpenClaw Rewrite
 
-### What's already implemented
+### What's already implemented (as of Layer 5 Phase 3)
 
 | OpenClaw Feature | CL Equivalent | Status |
 |-----------------|---------------|--------|
 | LLM API client | `cl-llm` | ✅ Complete |
 | Streaming SSE | `cl-llm/streaming` | ✅ Complete |
+| HTTP retry/backoff | `cl-llm/http` | ✅ Complete |
 | Tool protocol | `clambda/tools` | ✅ Complete |
 | Agent loop | `clambda/loop` | ✅ Complete |
-| Built-in tools (exec, file ops) | `clambda/builtins` | ✅ Complete |
+| Token budget / turn limits | `clambda/loop`, `clambda/session` | ✅ Complete |
+| Built-in tools (exec, file ops, web, tts) | `clambda/builtins` | ✅ Complete |
+| Structured logging (JSONL) | `clambda/logging` | ✅ Complete (wired in) |
+| Session persistence | `clambda/session` | ✅ Complete |
+| Workspace memory | `clambda/memory` | ✅ Complete |
+| Agent registry | `clambda/registry` | ✅ Complete |
+| Sub-agent spawning | `clambda/subagents` | ✅ Complete |
+| Channel protocol (abstract) | `clambda/channels` | ✅ Complete |
+| HTTP API server | `clambda/http-server` | ✅ Complete |
 | TUI chat | `cl-tui` | ✅ Complete |
 | GUI chat | `clambda-gui` | ✅ Complete |
 
-### What OpenClaw has that Clambda needs
+### What OpenClaw has that Clambda still needs
 
 | OpenClaw Feature | CL Gap | Priority |
 |-----------------|--------|---------|
 | Skills system (SKILL.md loading) | Not implemented | High |
-| Sub-agent spawning | Not implemented | High |
-| Channel plugins (Discord, Telegram) | Not implemented | Medium |
-| Message routing / sessions | Partial (session history only) | Medium |
+| Telegram channel plugin | Not implemented | Medium |
+| Discord channel plugin | Not implemented | Medium |
 | Web browser control | Not implemented | Low |
 | Canvas / UI presentation | Not implemented | Low |
 | Node pairing (mobile/devices) | Not implemented | Low |
-| TTS output | Not implemented | Low |
 | Cron / scheduled tasks | Not implemented | Medium |
-| Memory persistence (markdown files) | Not implemented | High |
-| Multi-model routing | Not implemented | Medium |
+| Multi-model routing | Not implemented | Low |
 
 ### Natural extension points
 
@@ -290,9 +296,63 @@ User enters command "Send <text>"
 
 ## 6. Known Architectural Gaps
 
-1. **No persistence** — session history is in-memory only; lost on process exit
-2. **No multi-agent coordination** — no message passing between agent instances
+1. ~~**No persistence**~~ — ✅ Done: `save-session` / `load-session`
+2. **No multi-agent coordination** — no structured message passing between agent instances;
+   sub-agents share nothing except the parent's tool registry passed at spawn time
 3. **Tool schema validation** — parameters accepted but not validated against schema
 4. **No streaming tool calls** — tool calls are only parsed from complete responses
 5. **Thread safety** — McCLIM redisplay from worker threads needs care; `safe-redisplay` is a workaround not a solution
-6. **No retry/backoff** — HTTP errors propagate immediately; no exponential backoff
+6. ~~**No retry/backoff**~~ — ✅ Done: exponential backoff in `cl-llm/http` for 429/5xx
+7. **`tool-result-ok` naming collision** — the `defun tool-result-ok` overrides the struct accessor
+   of the same name, so `format-tool-result` always returns the value without the `ERROR:` prefix
+   (see tools.lisp). Low severity (error results still carry the message), but confusing.
+   Fix: rename the slot to `:success` or the constructor to `make-ok-result`.
+
+## 7. Layer 5 Phase 3 Additions
+
+### New in `cl-llm/http` (retry/backoff)
+
+```
+cl-llm/conditions:retryable-error  — transient HTTP error (429, 5xx)
+cl-llm/http:*max-retries*          — default 3
+cl-llm/http:*retry-base-delay-seconds* — default 1 (exponential: 1s, 2s, 4s)
+```
+
+`post-json` and `post-json-stream` both retry automatically. The `retry` restart
+is established before each retry so callers can override (skip retry, abort, etc.).
+
+### New in `clambda/conditions`
+
+```
+clambda/conditions:budget-exceeded  — token or turn budget exceeded
+  :kind    — :tokens or :turns
+  :limit   — the configured maximum
+  :current — the value that exceeded it
+```
+
+### New in `clambda/session`
+
+```
+session-total-tokens  — cumulative token count; updated by agent-turn from usage data
+```
+
+### New in `clambda/loop`
+
+```
+loop-options :max-tokens — optional token budget; signals budget-exceeded when exceeded
+```
+
+Agent loop now also calls `log-llm-request` before each LLM call, `log-tool-call` and
+`log-tool-result` for each tool dispatch.
+
+### New in `clambda/builtins`
+
+```
+tts   — text-to-speech; shells out to espeak-ng/espeak/piper/say (whichever is on PATH)
+        graceful no-op if none available
+```
+
+### Updated in `clambda/http-server`
+
+- `start-server` now auto-configures `*log-file*` (defaults to `logs/clambda.jsonl`)
+- `/chat` and `/chat/stream` handlers emit `http_request` and `http_response` log entries

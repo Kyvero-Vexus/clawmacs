@@ -156,29 +156,32 @@ Priority files (SOUL.md, AGENTS.md, etc.) loaded first.
 **Approach:** Wrap `cl-selenium` or call `playwright` via shell.
 **Effort:** Large (1–2 weeks)
 
-#### 4.3 TTS Output
+#### ✅ 4.3 TTS Output
 **What:** Text-to-speech for voice output.
-**Why:** OpenClaw supports audio output channels.
-**Approach:** Shell out to `espeak`/`piper`/`say`; or use a TTS API.
-**Effort:** Small (1 day)
+**Status:** Done. `tts` built-in tool in `clambda/builtins`. Shells out to `espeak-ng`, `espeak`,
+`piper`, or `say` (checked at runtime). Graceful no-op if none available.
 
 ---
 
 ### Priority 5 — Production Hardening
 
-#### 5.1 Retry / Backoff
+#### ✅ 5.1 Retry / Backoff
 **What:** Retry transient HTTP errors with exponential backoff.
-**Approach:** Wrap `post-json` / `post-json-stream` with retry loop.
-**Effort:** Small (hours)
+**Status:** Done. `cl-llm/http` — `post-json` and `post-json-stream` retry on 429/500/502/503/504.
+Exponential backoff. Configurable `*max-retries*` (default 3) and `*retry-base-delay-seconds*` (default 1).
+`retryable-error` condition with `retry` restart.
 
-#### 5.2 Token Budget / Turn Limits
+#### ✅ 5.2 Token Budget / Turn Limits
 **What:** Hard limits on tokens and turns per session.
-**Approach:** Track token counts in `session`; add budget to `loop-options`.
-**Effort:** Small (1 day)
+**Status:** Done. `session-total-tokens` slot tracks cumulative usage. `loop-options` accepts
+`:max-tokens` and `:max-turns`. `budget-exceeded` condition signalled when limit hit.
+`:max-turns` was already implemented; `:max-tokens` added in Layer 5 Phase 3.
 
 #### ✅ 5.3 Structured Logging
 **What:** JSON logs of all agent activity (requests, tool calls, results).
 **Status:** Done. `clambda/logging` module — JSONL output, `with-logging` macro, configurable path.
+Wired into agent loop (LLM requests, tool calls, tool results) and HTTP server (requests, responses, errors).
+Default log file: `logs/clambda.jsonl` relative to process working directory.
 
 ---
 
@@ -193,19 +196,58 @@ Priority files (SOUL.md, AGENTS.md, etc.) loaded first.
 | No error recovery in agent loop | One bad tool call can break session | Add condition-based restart in `agent-turn` |
 | LM Studio models change | Hardcoded model names go stale | Store model config in workspace file |
 | Guix LD_LIBRARY_PATH | Fresh shells break dexador | Add to workspace startup script |
+| ~~No retry/backoff~~ | ~~Transient errors kill sessions~~ | ✅ Done: exponential backoff in `cl-llm/http` |
+| `tool-result-ok` naming collision | `format-tool-result` always shows value w/o ERROR: | Rename slot or constructor (low priority) |
 
 ---
 
-## Next Immediate Tasks (Layer 5)
+## ✅ Layer 5 Complete — Production Hardening
 
-Suggested starting point for the full OpenClaw rewrite:
+All Layer 5 tasks complete as of 2026-02-26:
 
-1. ✅ **Fix `*on-stream-delta*` re-export** in `clambda` package — was already done in Layer 4
+1. ✅ **Fix `*on-stream-delta*` re-export** in `clambda` package
 2. ✅ **Session persistence** — `save-session` / `load-session` (JSON, one file per session)
 3. ✅ **Memory loading** — `clambda/memory` module, `load-workspace-memory`, `memory-context-string`
 4. ✅ **Web fetch builtin** — `web_fetch` in `clambda/builtins` (dexador + cl-ppcre HTML stripping)
 5. ✅ **Structured logging** — `clambda/logging` module, JSONL to configurable file, `with-logging` macro
-6. **Sub-agent spawning** — first cut (2 days) ← NEXT
+6. ✅ **Sub-agent spawning** — `clambda/subagents`, `spawn-subagent`, `subagent-wait`
+7. ✅ **Agent/session registry** — `clambda/registry`, `define-agent`, `find-agent`
+8. ✅ **Channel protocol** — `clambda/channels`, `repl-channel`, `queue-channel`
+9. ✅ **HTTP API server** — `clambda/http-server`, `/chat`, `/agents`, `/sessions` endpoints
+10. ✅ **TTS output tool** — `tts` builtin, graceful no-op if no TTS engine available
+11. ✅ **Retry/backoff** — `cl-llm/http` exponential backoff, `retryable-error` condition
+12. ✅ **Token budget** — `session-total-tokens`, `loop-options :max-tokens`, `budget-exceeded` condition
+13. ✅ **Logging wired in** — agent loop, tool dispatch, and HTTP server all emit JSONL log entries
+14. ✅ **Full integration test** — `projects/clambda-core/integration-test.lisp`, 12/12 tests pass
 
-Completing these would make Clambda functionally comparable to the core of OpenClaw,
-minus channel plugins and browser control.
+Clambda is now functionally comparable to the core of OpenClaw, minus channel plugins and browser control.
+
+## What's Left
+
+### For Channel Plugins (Telegram, Discord, etc.)
+
+1. **Telegram channel** — `clambda/channels/telegram.lisp`
+   - Use `dexador` to call Telegram Bot API
+   - Implement `channel-send` / `channel-receive` generics for `telegram-channel`
+   - Long-poll or webhook receiver with Hunchentoot
+   - Effort: Medium (2–3 days)
+
+2. **Discord channel** — `clambda/channels/discord.lisp`
+   - Use Discord REST API + gateway WebSocket for real-time
+   - Effort: Large (1 week+, WebSocket dependency needed)
+
+3. **Skills system** — `clambda/skills`
+   - Scan a skills directory for `SKILL.md` files
+   - Parse tool definitions from skill metadata
+   - Inject skill instructions into agent system prompt
+   - Effort: Medium (2–3 days)
+
+4. **Browser control** — `clambda/browser`
+   - Shell out to Playwright or Puppeteer (Node.js)
+   - Or wrap a headless browser library
+   - Effort: Large (1–2 weeks)
+
+5. **Cron / scheduled tasks** — `clambda/cron`
+   - Periodic agent triggers
+   - Integrate with bordeaux-threads sleep-loop or a proper scheduler
+   - Effort: Small-Medium (1–2 days)

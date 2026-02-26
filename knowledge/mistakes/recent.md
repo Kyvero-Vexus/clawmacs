@@ -26,6 +26,7 @@
 | 13 | 2026-02-26 | idiom/assert | `(assert cond "message")` → "value not of type LIST" |
 | 14 | 2026-02-26 | runtime/json | Nested plist → JSON array not object (shallow `plist->object`) |
 | 16 | 2026-02-26 | idiom/bordeaux-threads | `bt:condition-broadcast` doesn't exist in bordeaux-threads v0.9.4 |
+| 17 | 2026-02-26 | idiom/defstruct | `defun` with same name as `defstruct` slot accessor silently replaces the accessor |
 
 ---
 
@@ -186,6 +187,27 @@
   Or just use `uiop:ensure-directory-pathname` directly — it accepts both strings and pathnames.
 **Lesson:** `uiop:ensure-directory-pathname` already handles strings. Don't wrap its output in `parse-native-namestring`. When writing functions that accept workspace paths, accept both strings and pathnames with an `(if (stringp p) ...)` guard.
 **Tags:** #uiop #pathnames #idiom #runtime
+
+---
+
+## Category: idiom/defstruct
+
+### #17 — 2026-02-26
+**What:** `(defstruct tool-entry (ok nil :type boolean))` generates `tool-result-ok` as a slot
+accessor. Then `(defun tool-result-ok (value) ...)` redefines the symbol. All code using
+`(tool-result-ok result)` to check "is this result successful?" now calls the constructor
+instead of the predicate — always returning a truthy struct. `format-tool-result` is broken
+silently: it always returns the value string even for error results.
+**Why:** In CL, `defstruct` generates accessor functions with `defun`. A subsequent `defun`
+with the same name *replaces* the accessor. No warning is issued.
+**Fix:** Never use the same name for a constructor and a struct accessor. Options:
+  - Use `:conc-name` to give the struct a different prefix (e.g., `(:conc-name tr-)`)
+  - Name the constructor differently: `make-ok-result` instead of `tool-result-ok`
+  - Add a separate predicate: `(defun tool-result-success-p (r) (tr-ok r))`
+**Lesson:** When you define both a struct slot and a public constructor/helper with overlapping
+names, always check whether `defun` is overwriting a generated struct accessor. Best practice:
+design struct slot names and public API names independently; use `:conc-name` to decouple them.
+**Tags:** #defstruct #conc-name #idiom #naming
 
 ---
 

@@ -50,6 +50,20 @@
                      (stream-error-chunk c))))
   (:documentation "Raised when there's an error parsing an SSE stream."))
 
+;;; ── Retryable errors ─────────────────────────────────────────────────────────
+
+(define-condition retryable-error (http-error)
+  ((attempt :initarg :attempt :reader retryable-error-attempt :initform 1))
+  (:report (lambda (c s)
+             (format s "Retryable HTTP error ~a (attempt ~a): ~a"
+                     (http-error-status c)
+                     (retryable-error-attempt c)
+                     (http-error-body c))))
+  (:documentation
+   "A transient HTTP error that may succeed on retry.
+Signalled for status codes: 429, 500, 502, 503, 504.
+The RETRY restart is established by the retry loop."))
+
 ;;; ── Restarts ─────────────────────────────────────────────────────────────────
 ;;
 ;; We define no global restarts here — callers establish their own.

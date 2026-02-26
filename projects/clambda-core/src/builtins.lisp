@@ -58,6 +58,52 @@ Returns (values text-string content-type-string status-code)."
                               text)))
       (values truncated content-type status))))
 
+;;; ── TTS helpers ──────────────────────────────────────────────────────────────
+
+(defvar *tts-command* :auto
+  "TTS command to use. :auto = probe at runtime. NIL = disabled.
+String = explicit command (e.g. \"espeak-ng\").")
+
+(defun find-tts-command ()
+  "Probe for an available TTS binary. Returns a command string or NIL."
+  (loop :for candidate :in '("espeak-ng" "espeak" "piper" "say")
+        :when (handler-case
+                  (zerop (nth-value 2
+                           (uiop:run-program
+                            (list "/bin/bash" "-c"
+                                  (format nil "command -v ~a" candidate))
+                            :ignore-error-status t
+                            :output nil
+                            :error-output nil)))
+                (error () nil))
+        :return candidate))
+
+(defun tts-speak (text)
+  "Speak TEXT using the first available TTS engine.
+Returns a TOOL-RESULT-OK with a status message, or TOOL-RESULT-OK
+with 'TTS not available' if no engine is found (graceful no-op)."
+  (let* ((cmd (if (eq *tts-command* :auto)
+                  (find-tts-command)
+                  *tts-command*)))
+    (if cmd
+        (handler-case
+            (progn
+              (uiop:run-program (list "/bin/bash" "-c"
+                                     (format nil "~a ~s" cmd text))
+                                :ignore-error-status t
+                                :output nil
+                                :error-output nil)
+              (let ((preview (if (> (length text) 60)
+                                 (concatenate 'string (subseq text 0 60) "...")
+                                 text)))
+                (clambda/tools:tool-result-ok
+                 (format nil "Spoke via ~a: ~s" cmd preview))))
+          (error (e)
+            (clambda/tools:tool-result-error
+             (format nil "TTS error using ~a: ~a" cmd e))))
+        (clambda/tools:tool-result-ok
+         "TTS not available: no espeak-ng/espeak/piper/say found on PATH. Text not spoken."))))
+
 ;;; ── exec helper ──────────────────────────────────────────────────────────────
 
 (defun run-shell-command (command &key workdir)
@@ -224,6 +270,26 @@ Returns REGISTRY."
                   :|max_chars| (:|type| "integer"
                                 :|description| "Maximum characters to return (default: 50000)"))
                  :|required| #("url")))
+
+  ;; ── tts ───────────────────────────────────────────────────────────────────
+  (clambda/tools:register-tool!
+   registry
+   "tts"
+   (lambda (args)
+     (let ((text (gethash "text" args)))
+       (cond
+         ((or (null text) (string= text ""))
+          (clambda/tools:tool-result-error "No text provided"))
+         (t
+          (tts-speak text)))))
+   :description
+   "Convert text to speech using the system TTS (espeak-ng, espeak, piper, or say).
+Returns a confirmation or 'TTS not available' if no TTS engine is installed."
+   :parameters '(:|type| "object"
+                 :|properties|
+                 (:|text| (:|type| "string"
+                           :|description| "The text to speak aloud"))
+                 :|required| #("text")))
 
   registry)
 

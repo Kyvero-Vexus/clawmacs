@@ -121,6 +121,12 @@ Returns an AGENT object or NIL."
       (unless message
         (return-from handle-chat (json-error "Missing 'message' field")))
 
+      ;; Log the incoming request
+      (clambda/logging:log-event "http_request"
+                                  "endpoint" "/chat"
+                                  "session_id" session-id
+                                  "message_length" (length message))
+
       ;; Run the agent loop
       (let ((response
              (handler-case
@@ -128,8 +134,17 @@ Returns an AGENT object or NIL."
                                          :options (clambda/loop:make-loop-options
                                                    :max-turns 10))
                (error (c)
+                 (clambda/logging:log-error-event
+                  (when agent-name agent-name) "agent_error" (format nil "~a" c)
+                  :context "/chat")
                  (return-from handle-chat
                    (json-error (format nil "Agent error: ~a" c) 500))))))
+
+        ;; Log the response
+        (clambda/logging:log-event "http_response"
+                                    "endpoint" "/chat"
+                                    "session_id" session-id
+                                    "response_length" (length (or response "")))
 
         ;; Build response
         (let ((out (make-hash-table :test 'equal)))
@@ -266,13 +281,25 @@ Returns an AGENT object or NIL."
 
 ;;; ── Server lifecycle ─────────────────────────────────────────────────────────
 
-(defun start-server (&key (port *default-port*) (address "127.0.0.1"))
+(defun start-server (&key (port *default-port*) (address "127.0.0.1") log-file)
   "Start the Clambda HTTP API server on PORT (default: *DEFAULT-PORT*).
 Sets *SERVER* to the running acceptor.
+
+LOG-FILE — optional path for structured JSON logging. If NIL and *LOG-FILE* is
+           already set, uses the existing value. If NIL and *LOG-FILE* is NIL,
+           defaults to 'logs/clambda.jsonl' relative to the process working directory.
+
 Returns the acceptor."
   (when (and *server* (hunchentoot:started-p *server*))
     (warn "Server already running on port ~a. Stop it first." port)
     (return-from start-server *server*))
+  ;; Configure default log file
+  (when (or log-file (null clambda/logging:*log-file*))
+    (setf clambda/logging:*log-file*
+          (or log-file
+              (uiop:native-namestring
+               (merge-pathnames "logs/clambda.jsonl"
+                                (uiop:getcwd))))))
   (let ((acceptor (make-instance 'hunchentoot:easy-acceptor
                                  :port port
                                  :address address
@@ -283,6 +310,8 @@ Returns the acceptor."
     (hunchentoot:start acceptor)
     (setf *server* acceptor)
     (format t "~&[clambda/http-server] Started on ~a:~a~%" address port)
+    (format t "~&[clambda/http-server] Logging to ~a~%" clambda/logging:*log-file*)
+    (clambda/logging:log-event "server_start" "port" port "address" address)
     acceptor))
 
 (defun stop-server ()

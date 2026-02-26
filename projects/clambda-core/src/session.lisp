@@ -37,7 +37,14 @@
    (created-at
     :initarg :created-at
     :accessor session-created-at
-    :documentation "Universal time when this session was created."))
+    :documentation "Universal time when this session was created.")
+   (total-tokens
+    :initarg :total-tokens
+    :accessor session-total-tokens
+    :initform 0
+    :type integer
+    :documentation "Cumulative token count for this session (prompt + completion).
+Updated after each LLM call when usage data is available."))
   (:documentation
    "A session represents a conversation context for an agent.
 It holds the message history and is associated with one agent."))
@@ -50,18 +57,20 @@ It holds the message history and is associated with one agent."))
 
 ;;; ── Constructor ──────────────────────────────────────────────────────────────
 
-(defun make-session (&key agent id metadata)
+(defun make-session (&key agent id metadata (total-tokens 0))
   "Create a new SESSION for AGENT.
 
-AGENT — the CLAMBDA/AGENT:AGENT this session belongs to.
-ID — optional session ID string (auto-generated if not provided).
-METADATA — optional plist of metadata."
+AGENT        — the CLAMBDA/AGENT:AGENT this session belongs to.
+ID           — optional session ID string (auto-generated if not provided).
+METADATA     — optional plist of metadata.
+TOTAL-TOKENS — optional initial token count (default 0)."
   (make-instance 'session
-                 :id         (or id (generate-session-id))
-                 :agent      agent
-                 :messages   nil
-                 :metadata   metadata
-                 :created-at (get-universal-time)))
+                 :id           (or id (generate-session-id))
+                 :agent        agent
+                 :messages     nil
+                 :metadata     metadata
+                 :total-tokens total-tokens
+                 :created-at   (get-universal-time)))
 
 ;;; ── Message operations ───────────────────────────────────────────────────────
 
@@ -109,6 +118,7 @@ Returns the path string."
          (path-str (if (pathnamep path) (namestring path) path)))
     (setf (gethash "id" data) (session-id session))
     (setf (gethash "created_at" data) (session-created-at session))
+    (setf (gethash "total_tokens" data) (session-total-tokens session))
     (setf (gethash "messages" data)
           (coerce (messages->json-list (session-messages session)) 'vector))
     (ensure-directories-exist path-str)
@@ -127,7 +137,8 @@ Message history is restored as raw message structs where possible."
          (session (make-session
                    :agent agent
                    :id (gethash "id" data)
-                   :metadata nil))
+                   :metadata nil
+                   :total-tokens (or (gethash "total_tokens" data) 0)))
          (msgs-data (gethash "messages" data)))
     ;; Restore messages as USER/ASSISTANT/etc. message structs
     (when msgs-data

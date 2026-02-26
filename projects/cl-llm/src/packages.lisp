@@ -19,7 +19,10 @@
    #:parse-error-raw
    ;; Stream errors
    #:stream-error*
-   #:stream-error-chunk))
+   #:stream-error-chunk
+   ;; Retryable errors
+   #:retryable-error
+   #:retryable-error-attempt))
 
 (defpackage #:cl-llm/json
   (:use #:cl)
@@ -76,10 +79,14 @@
 (defpackage #:cl-llm/http
   (:use #:cl)
   (:import-from #:cl-llm/conditions
-                #:http-error #:http-error-status #:http-error-body)
+                #:http-error #:http-error-status #:http-error-body
+                #:retryable-error)
   (:export
    #:post-json
-   #:post-json-stream))
+   #:post-json-stream
+   ;; Retry configuration
+   #:*max-retries*
+   #:*retry-base-delay-seconds*))
 
 (defpackage #:cl-llm/client
   (:use #:cl)
@@ -153,7 +160,10 @@
                 #:make-request-options)
   (:import-from #:cl-llm/conditions
                 #:llm-error #:http-error #:api-error
-                #:parse-error* #:stream-error*)
+                #:parse-error* #:stream-error*
+                #:retryable-error #:retryable-error-attempt)
+  (:import-from #:cl-llm/http
+                #:*max-retries* #:*retry-base-delay-seconds*)
   (:import-from #:cl-llm/tools
                 #:define-tool #:tool-registry #:make-registry
                 #:register-tool #:find-tool #:dispatch-tool-call
@@ -186,6 +196,9 @@
    ;; Conditions
    #:llm-error #:http-error #:api-error
    #:parse-error* #:stream-error*
+   #:retryable-error #:retryable-error-attempt
+   ;; Retry config
+   #:*max-retries* #:*retry-base-delay-seconds*
    ;; Tools
    #:define-tool #:tool-registry #:make-registry
    #:register-tool #:find-tool #:dispatch-tool-call

@@ -21,16 +21,22 @@
 (defstruct (loop-options (:constructor %make-loop-options))
   "Options for an agent loop run."
   (max-turns  10   :type fixnum)
+  (max-tokens nil               )  ; NIL = unlimited; integer = token limit
   (stream     nil  :type boolean)
   (verbose    nil  :type boolean))
 
-(defun make-loop-options (&key (max-turns 10) stream verbose)
+(defun make-loop-options (&key (max-turns 10) max-tokens stream verbose)
   "Create LOOP-OPTIONS.
 
-MAX-TURNS — maximum number of LLM call-and-tool-dispatch iterations (default: 10).
-STREAM — use streaming mode (default: NIL).
-VERBOSE — print loop status to *STANDARD-OUTPUT* (default: NIL)."
-  (%make-loop-options :max-turns max-turns :stream stream :verbose verbose))
+MAX-TURNS  — maximum number of LLM call-and-tool-dispatch iterations (default: 10).
+MAX-TOKENS — optional cumulative token budget for the session (default: NIL = unlimited).
+             Signals BUDGET-EXCEEDED when the session's total-tokens exceeds this.
+STREAM     — use streaming mode (default: NIL).
+VERBOSE    — print loop status to *STANDARD-OUTPUT* (default: NIL)."
+  (%make-loop-options :max-turns max-turns
+                      :max-tokens max-tokens
+                      :stream stream
+                      :verbose verbose))
 
 ;;; ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -55,6 +61,20 @@ Returns a list of tool result strings."
 
        (let* ((result (clambda/tools:dispatch-tool-call registry tc))
               (result-str (clambda/tools:format-tool-result result)))
+
+         ;; Log tool call
+         (clambda/logging:log-tool-call
+          (clambda/agent:agent-name (clambda/session:session-agent session))
+          name
+          (let ((args (cl-llm/protocol:tool-call-function-arguments tc)))
+            (if args (format nil "~a" args) "")))
+         ;; Log tool result — success if result-str doesn't start with "ERROR:"
+         (clambda/logging:log-tool-result
+          (clambda/agent:agent-name (clambda/session:session-agent session))
+          name
+          (not (and (>= (length result-str) 6)
+                    (string= (subseq result-str 0 6) "ERROR:")))
+          (length result-str))
 
          (when verbose
            (format t "[tool] result: ~a~%" result-str))
@@ -118,6 +138,13 @@ OPTIONS — a LOOP-OPTIONS struct (default: standard options)."
               (clambda/agent:agent-name agent)
               (length messages)))
 
+    ;; Log the LLM request
+    (clambda/logging:log-llm-request
+     (clambda/agent:agent-name agent)
+     (or model "unknown")
+     (length messages)
+     :tools-count (length tools))
+
     ;; Call the LLM
     (let ((response
            (if (loop-options-stream opts)
@@ -147,6 +174,25 @@ OPTIONS — a LOOP-OPTIONS struct (default: standard options)."
             (clambda/session:session-add-message
              session (cl-llm/protocol:assistant-message text)))
           (return-from agent-turn (values text nil nil))))
+
+      ;; Track token usage from response
+      (let ((usage (cl-llm/protocol:response-usage response)))
+        (when usage
+          (let ((total (cl-llm/protocol:usage-total-tokens usage)))
+            (incf (clambda/session:session-total-tokens session) total)
+            ;; Check token budget
+            (let ((max-tokens (loop-options-max-tokens opts)))
+              (when (and max-tokens
+                         (> (clambda/session:session-total-tokens session)
+                            max-tokens))
+                (restart-case
+                    (error 'clambda/conditions:budget-exceeded
+                           :kind    :tokens
+                           :limit   max-tokens
+                           :current (clambda/session:session-total-tokens session))
+                  (abort-agent-loop ()
+                    :report "Abort the agent loop due to token budget exceeded."
+                    (return-from agent-turn (values nil nil nil)))))))))
 
       ;; Non-streaming structured response
       (let* ((text       (extract-text-from-response response))

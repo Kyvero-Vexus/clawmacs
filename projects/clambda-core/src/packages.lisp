@@ -21,6 +21,11 @@
    #:tool-execution-error-cause
    ;; Loop control
    #:agent-loop-error
+   ;; Budget
+   #:budget-exceeded
+   #:budget-exceeded-kind
+   #:budget-exceeded-limit
+   #:budget-exceeded-current
    ;; Restarts
    #:skip-tool-call
    #:retry-tool-call
@@ -70,6 +75,8 @@
    #:session-clear-messages
    #:session-message-count
    #:session-last-message
+   ;; Token tracking
+   #:session-total-tokens
    ;; Persistence (basic)
    #:save-session
    #:load-session))
@@ -155,6 +162,9 @@
 
 (defpackage #:clambda/loop
   (:use #:cl)
+  (:import-from #:clambda/logging
+                #:log-llm-request #:log-tool-call #:log-tool-result
+                #:log-error-event)
   (:import-from #:clambda/agent
                 #:agent
                 #:agent-name
@@ -173,7 +183,8 @@
                 #:dispatch-tool-call
                 #:format-tool-result)
   (:import-from #:clambda/conditions
-                #:agent-loop-error #:abort-agent-loop)
+                #:agent-loop-error #:abort-agent-loop
+                #:budget-exceeded)
   (:export
    ;; Main entry points
    #:agent-turn
@@ -187,6 +198,7 @@
    #:loop-options
    #:make-loop-options
    #:loop-options-max-turns
+   #:loop-options-max-tokens
    #:loop-options-stream
    #:loop-options-verbose))
 
@@ -283,6 +295,8 @@
 
 (defpackage #:clambda/http-server
   (:use #:cl)
+  (:import-from #:clambda/logging
+                #:log-event #:log-error-event #:*log-file*)
   (:import-from #:clambda/session
                 #:session #:make-session #:session-id #:session-messages)
   (:import-from #:clambda/registry
@@ -321,7 +335,7 @@
                 #:session #:make-session
                 #:session-id #:session-agent #:session-messages
                 #:session-add-message #:session-clear-messages
-                #:session-message-count
+                #:session-message-count #:session-total-tokens
                 #:save-session #:load-session)
   (:import-from #:clambda/tools
                 #:tool-registry #:make-tool-registry
@@ -336,7 +350,9 @@
                 #:agent-turn #:run-agent
                 #:*on-tool-call* #:*on-tool-result* #:*on-llm-response*
                 #:*on-stream-delta*
-                #:loop-options #:make-loop-options)
+                #:loop-options #:make-loop-options
+                #:loop-options-max-turns #:loop-options-max-tokens
+                #:loop-options-stream #:loop-options-verbose)
   (:import-from #:clambda/logging
                 #:*log-file* #:*log-enabled*
                 #:log-event #:log-llm-request #:log-tool-call
@@ -352,7 +368,10 @@
   (:import-from #:clambda/conditions
                 #:clambda-error #:agent-error #:session-error
                 #:tool-not-found #:tool-execution-error
-                #:agent-loop-error)
+                #:agent-loop-error
+                #:budget-exceeded
+                #:budget-exceeded-kind #:budget-exceeded-limit
+                #:budget-exceeded-current)
   (:import-from #:clambda/registry
                 #:*agent-registry*
                 #:register-agent #:find-agent #:list-agents
@@ -391,7 +410,7 @@
    #:session #:make-session
    #:session-id #:session-agent #:session-messages
    #:session-add-message #:session-clear-messages
-   #:session-message-count
+   #:session-message-count #:session-total-tokens
    #:save-session #:load-session
    ;; Tools
    #:tool-registry #:make-tool-registry
@@ -407,6 +426,8 @@
    #:*on-tool-call* #:*on-tool-result* #:*on-llm-response*
    #:*on-stream-delta*
    #:loop-options #:make-loop-options
+   #:loop-options-max-turns #:loop-options-max-tokens
+   #:loop-options-stream #:loop-options-verbose
    ;; Logging
    #:*log-file* #:*log-enabled*
    #:log-event #:log-llm-request #:log-tool-call
@@ -423,6 +444,9 @@
    #:clambda-error #:agent-error #:session-error
    #:tool-not-found #:tool-execution-error
    #:agent-loop-error
+   #:budget-exceeded
+   #:budget-exceeded-kind #:budget-exceeded-limit
+   #:budget-exceeded-current
    ;; Registry
    #:*agent-registry*
    #:register-agent #:find-agent #:list-agents
