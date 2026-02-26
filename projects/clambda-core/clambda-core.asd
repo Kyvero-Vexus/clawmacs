@@ -5,11 +5,12 @@
 ;;;; built-in tools (exec, read, write, list-dir, web-fetch),
 ;;;; structured logging, workspace memory, the agent loop,
 ;;;; agent registry, sub-agent spawning, channel protocol, HTTP API,
-;;;; and the Emacs-style configuration system (Layer 6a).
+;;;; the Emacs-style configuration system (Layer 6a),
+;;;; and the Telegram Bot API channel (Layer 6b).
 
 (defsystem "clambda-core"
   :description "Core agent platform architecture in Common Lisp"
-  :version "0.4.0"
+  :version "0.5.0"
   :author "Gensym <gensym@cl-team>"
   :license "MIT"
   :depends-on ("cl-llm"
@@ -36,13 +37,16 @@
                (:file "src/channels")
                (:file "src/http-server")
                ;; Layer 6a: Emacs-style config system
-               (:file "src/config"))
+               (:file "src/config")
+               ;; Layer 6b: Telegram Bot API channel
+               (:file "src/telegram"))
   :in-order-to ((test-op (test-op "clambda-core/tests"))))
 
 (defsystem "clambda-core/tests"
   :description "Tests for clambda-core"
-  :depends-on ("clambda-core")
+  :depends-on ("clambda-core" "parachute")
   :serial t
   :components ((:file "t/packages")
                (:file "t/smoke-test")
-               (:file "t/test-config")))
+               (:file "t/test-config")
+               (:file "t/test-telegram")))

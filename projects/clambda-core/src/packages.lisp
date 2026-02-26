@@ -367,6 +367,51 @@
    #:*log-level*
    #:*startup-message*))
 
+;;; ── Telegram Channel ─────────────────────────────────────────────────────────
+;;;
+;;; Telegram Bot API channel — long-polling, background thread, per-chat sessions.
+;;; Specialises REGISTER-CHANNEL :TELEGRAM from clambda/config.
+;;; Loaded after config so the register-channel generic is already defined.
+
+(defpackage #:clambda/telegram
+  (:use #:cl)
+  ;; Only import what we need unqualified; everything else is package-qualified.
+  (:import-from #:clambda/config
+                #:register-channel
+                #:*registered-channels*)
+  (:export
+   ;; Channel struct
+   #:telegram-channel
+   #:make-telegram-channel
+   #:telegram-channel-token
+   #:telegram-channel-allowed-users
+   #:telegram-channel-polling-interval
+   #:telegram-channel-running
+   #:telegram-channel-thread
+   #:telegram-channel-last-update-id
+   #:telegram-channel-sessions
+   ;; Global state / options
+   #:*telegram-channel*
+   #:*telegram-llm-base-url*
+   #:*telegram-llm-api-key*
+   #:*telegram-system-prompt*
+   #:*telegram-poll-timeout*
+   ;; Bot API helpers
+   #:telegram-api-url
+   #:telegram-get-me
+   #:telegram-get-updates
+   #:telegram-send-message
+   ;; Logic helpers (exposed for unit testing without HTTP)
+   #:allowed-user-p
+   #:find-or-create-session
+   #:process-update
+   ;; Lifecycle
+   #:start-telegram
+   #:stop-telegram
+   #:telegram-running-p
+   ;; Multi-channel startup
+   #:start-all-channels))
+
 ;;; ── Top-level convenience package ────────────────────────────────────────────
 
 (defpackage #:clambda
@@ -458,6 +503,19 @@
                 #:merge-user-tools! #:*user-tool-registry*
                 #:*default-model* #:*default-max-turns*
                 #:*default-stream* #:*log-level* #:*startup-message*)
+  (:import-from #:clambda/telegram
+                #:telegram-channel #:make-telegram-channel
+                #:telegram-channel-token #:telegram-channel-allowed-users
+                #:telegram-channel-polling-interval
+                #:telegram-channel-running #:telegram-channel-thread
+                #:*telegram-channel*
+                #:*telegram-llm-base-url* #:*telegram-llm-api-key*
+                #:*telegram-system-prompt* #:*telegram-poll-timeout*
+                #:telegram-api-url #:telegram-get-me
+                #:telegram-get-updates #:telegram-send-message
+                #:allowed-user-p
+                #:start-telegram #:stop-telegram #:telegram-running-p
+                #:start-all-channels)
   (:export
    ;; Agent
    #:agent #:make-agent
@@ -544,7 +602,20 @@
    #:define-user-tool #:register-user-tool!
    #:merge-user-tools! #:*user-tool-registry*
    #:*default-model* #:*default-max-turns*
-   #:*default-stream* #:*log-level* #:*startup-message*))
+   #:*default-stream* #:*log-level* #:*startup-message*
+   ;; Telegram channel
+   #:telegram-channel #:make-telegram-channel
+   #:telegram-channel-token #:telegram-channel-allowed-users
+   #:telegram-channel-polling-interval
+   #:telegram-channel-running #:telegram-channel-thread
+   #:*telegram-channel*
+   #:*telegram-llm-base-url* #:*telegram-llm-api-key*
+   #:*telegram-system-prompt* #:*telegram-poll-timeout*
+   #:telegram-api-url #:telegram-get-me
+   #:telegram-get-updates #:telegram-send-message
+   #:allowed-user-p
+   #:start-telegram #:stop-telegram #:telegram-running-p
+   #:start-all-channels))
 
 ;;; ── User init package (for init.lisp) ────────────────────────────────────────
 ;;;
@@ -583,6 +654,12 @@
                 #:define-agent #:register-agent #:find-agent)
   (:import-from #:cl-llm
                 #:make-client)
+  (:import-from #:clambda/telegram
+                #:start-telegram #:stop-telegram
+                #:telegram-running-p #:start-all-channels
+                #:*telegram-channel*
+                #:*telegram-llm-base-url* #:*telegram-llm-api-key*
+                #:*telegram-system-prompt*)
   (:export
    ;; Re-export everything imported so users can (use-package :clambda-user)
    ;; from a downstream package if desired.
@@ -605,4 +682,10 @@
    #:agent-client #:agent-tool-registry
    #:session #:make-session
    #:define-agent #:register-agent #:find-agent
-   #:make-client))
+   #:make-client
+   ;; Telegram channel lifecycle (most useful from init.lisp)
+   #:start-telegram #:stop-telegram
+   #:telegram-running-p #:start-all-channels
+   #:*telegram-channel*
+   #:*telegram-llm-base-url* #:*telegram-llm-api-key*
+   #:*telegram-system-prompt*))
