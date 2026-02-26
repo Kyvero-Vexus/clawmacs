@@ -1,5 +1,26 @@
 # Recent Mistakes
 
+## 2026-02-26 Category: runtime (McCLIM)
+**What:** Calling `clim:redisplay-frame-pane` (via `push-chat-message`) before `clim:run-frame-top-level` causes "no applicable method for `pane-needs-redisplay` when called with NIL".
+**Why:** `find-pane-named` returns NIL for panes that haven't been adopted/realized yet. Panes are only live after `run-frame-top-level` starts.
+**Fix:** Add a `safe-redisplay` helper that calls `find-pane-named` first and only redisplays if the pane is non-NIL. For pre-launch setup, use `append-chat-message` (just sets the slot, no redisplay).
+**Lesson:** Never call `redisplay-frame-pane` on a frame before its top-level is running. McCLIM panes are live only after `run-frame-top-level`.
+**Tags:** #mcclim #redisplay #frames #initialization
+
+## 2026-02-26 Category: idiom (McCLIM)
+**What:** `get-output-stream-string` **clears** the string-output-stream on every call. Using it in a streaming delta callback to update a display buffer produced a buffer showing only the LAST token, not the accumulated text.
+**Why:** Per CL spec, `get-output-stream-string` returns all accumulated chars AND resets the internal buffer. So each call discards previous content.
+**Fix:** Accumulate into an adjustable char array with fill-pointer: `(vector-push-extend ch buf)`. Snapshot with `(coerce buf 'string)` which does NOT clear the array.
+**Lesson:** For streaming accumulation, use adjustable arrays or `with-output-to-string`. Never use `make-string-output-stream` + `get-output-stream-string` in a hot loop where you need the full history on each call.
+**Tags:** #streams #mcclim #streaming #idiom
+
+## 2026-02-26 Category: packages
+**What:** `*on-stream-delta*` is exported from `clambda/loop` but NOT re-exported by the top-level `clambda` package.
+**Why:** The `clambda` package only `:import-from`s `#:*on-tool-call*`, `#:*on-tool-result*`, `#:*on-llm-response*` from `clambda/loop` — omits `*on-stream-delta*`.
+**Fix:** `:import-from #:clambda/loop #:*on-stream-delta*` directly in the downstream package.
+**Lesson:** The `clambda` convenience package is incomplete. Always check which symbols are re-exported when using convenience packages. Prefer `#:clambda/loop` when you need the full loop API.
+**Tags:** #packages #exports #clambda
+
 ## 2026-02-26 Category: runtime
 **What:** `post-json-stream` bound `stream` as the 5th return value from `dexador:post`, but dexador with `:want-stream t` returns the stream as the *first* value (the body IS the stream).
 **Why:** Misread the dexador API — assumed `:want-stream` added an extra return value, but it replaces the body with the stream.

@@ -181,6 +181,7 @@
   (:import-from #:clambda/loop
                 #:agent-turn #:run-agent
                 #:*on-tool-call* #:*on-tool-result* #:*on-llm-response*
+                #:*on-stream-delta*
                 #:loop-options #:make-loop-options)
   (:import-from #:clambda/conditions
                 #:clambda-error #:agent-error #:session-error
@@ -209,6 +210,7 @@
    ;; Loop
    #:agent-turn #:run-agent
    #:*on-tool-call* #:*on-tool-result* #:*on-llm-response*
+   #:*on-stream-delta*
    #:loop-options #:make-loop-options
    ;; Conditions
    #:clambda-error #:agent-error #:session-error
