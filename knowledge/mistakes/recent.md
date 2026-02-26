@@ -9,6 +9,8 @@
 ## Index
 
 | # | Date | Category | Summary |
+| 20 | 2026-02-26 | packages | `clambda/irc` placed before `clambda/config` in packages.lisp — forward-ref error since it imports `register-channel` from config |
+| 21 | 2026-02-26 | idiom/sbcl | Loading test package that uses `#:parachute` before parachute is loaded → PACKAGE-DOES-NOT-EXIST |
 | 18 | 2026-02-26 | packages | `merge-user-tools!` defined in config.lisp but omitted from `clambda/config` exports |
 | 19 | 2026-02-26 | idiom/clos | `(find-class '(eql :kw))` in `find-method` — wrong; use `sb-mop:intern-eql-specializer` |
 |---|------|---------|---------|
@@ -243,3 +245,25 @@ design struct slot names and public API names independently; use `:conc-name` to
 **Fix:** Use `sb-mop:intern-eql-specializer :custom-plugin` to get the EQL specializer object, then pass it to `find-method`. Wrap in `ignore-errors` for cleanup code.
 **Lesson:** To remove a method with an EQL specializer in SBCL: `(find-method gf '() (list (sb-mop:intern-eql-specializer val)) nil)`. The standard `find-class` is only for named classes. For EQL specializers, use the MOP.
 **Tags:** #clos #mop #methods #eql-specializer
+
+---
+
+## Category: packages
+
+### #20 — 2026-02-26
+**What:** Initially placed `clambda/irc` defpackage BEFORE `clambda/config` in packages.lisp. Got PACKAGE-DOES-NOT-EXIST at load time: `clambda/irc` imports `register-channel` and `*default-model*` from `clambda/config`, but `clambda/config` wasn't defined yet.
+**Why:** When working in a file with many packages, it's easy to place a new package in a "logical" position (before the config section) instead of the correct dependency-ordered position (after config).
+**Fix:** Moved `clambda/irc` to AFTER `clambda/config` and the Telegram package, just before the top-level `clambda` convenience package.
+**Lesson:** Package load order in `packages.lisp` MUST match dependency order. When a new package specialises a generic from another package (e.g., `register-channel`), it MUST be defined after that package. Draw out the dependency graph before placing the defpackage.
+**Tags:** #packages #load-order #defpackage
+
+---
+
+## Category: idiom/sbcl
+
+### #21 — 2026-02-26
+**What:** In a test runner script, loaded test packages (which use `(:use #:parachute)`) before `parachute` was quickloaded. Got PACKAGE-DOES-NOT-EXIST: "The name PARACHUTE does not designate any package."
+**Why:** The main system (`clambda-core`) doesn't depend on `parachute` — only `clambda-core/tests` does. When we manually load `t/packages.lisp` in a script that already loaded `clambda-core` (not `clambda-core/tests`), parachute is not in the image.
+**Fix:** Always `(ql:quickload :parachute :silent t)` BEFORE loading any test package that `(:use #:parachute)`. Or load the full `clambda-core/tests` ASDF system instead of individual files.
+**Lesson:** Test packages must have their dependencies explicitly loaded before `defpackage` is evaluated. Don't assume a test runner has pre-loaded all test dependencies. When writing script-driven test runners, always quickload test dependencies at the top.
+**Tags:** #packages #parachute #testing #sbcl

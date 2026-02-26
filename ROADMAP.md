@@ -253,32 +253,85 @@ All Layer 6a tasks complete as of 2026-02-26:
 14. ✅ **`clambda-core.asd` updated** to v0.4.0; `src/config` added as last component
 15. ✅ **`clambda` package updated** — all config symbols re-exported
 
+## ✅ Layer 6b Complete — Telegram Bot API Channel
+
+All Layer 6b tasks complete as of 2026-02-26:
+
+1. ✅ **`clambda/telegram` module** — `src/telegram.lisp`; loaded after `src/config`
+2. ✅ **Long-polling loop** — `bt:make-thread`; `getUpdates` with 5s timeout for responsive shutdown
+3. ✅ **Bot API HTTP client** — dexador + jzon; `getUpdates`, `sendMessage`, `getMe`
+4. ✅ **Message routing** — per-chat-id session hash-table; `find-or-create-session`; `run-agent` → `sendMessage`
+5. ✅ **Markdown support** — `sendMessage` with `parse_mode: "Markdown"` by default
+6. ✅ **`register-channel :telegram`** — EQL-specialised method on config generic; stores config + sets `*telegram-channel*`; does NOT auto-start
+7. ✅ **`start-telegram` / `stop-telegram`** — start/stop the background polling thread
+8. ✅ **Allowlist enforcement** — `:allowed-users` list; silently reject unlisted user-IDs
+9. ✅ **Graceful shutdown** — `running` flag; thread exits after current poll completes (≤ `*telegram-poll-timeout*` seconds)
+10. ✅ **Error handling** — network/parse errors in polling loop → log + sleep + retry, no crash
+11. ✅ **`start-all-channels`** — iterates `*registered-channels*`, starts all telegram channels
+12. ✅ **Configurable options** — `*telegram-llm-base-url*`, `*telegram-llm-api-key*`, `*telegram-system-prompt*`, `*telegram-poll-timeout*`
+13. ✅ **39/39 unit tests** — URL construction, allowlist logic, message field extraction, mock update routing; all pass
+14. ✅ **`clambda-core.asd` updated** to v0.5.0; `src/telegram` component added; test file added
+15. ✅ **`clambda` + `clambda-user` packages updated** — all telegram symbols re-exported
+
+---
+
+## ✅ Layer 6c Complete — IRC Client Channel
+
+All Layer 6c tasks complete as of 2026-02-26:
+
+1. ✅ **`clambda/irc` module** — `src/irc.lisp` (raw sockets, no external IRC library)
+2. ✅ **Raw IRC protocol** — `usocket` for TCP, `cl+ssl` for TLS
+3. ✅ **IRC protocol primitives:**
+   - `parse-irc-line` — parser returning `(:prefix :command :params :trailing)` plist
+   - `irc-build-line` — line builder (command + params + trailing)
+   - `prefix-nick` — extract nick from `nick!user@host` prefix
+4. ✅ **Full registration flow** — NICK, USER, auto-JOIN after RPL_WELCOME (001)
+5. ✅ **NickServ IDENTIFY** — sent after 001 if `nickserv-password` configured
+6. ✅ **PING/PONG keepalive** — server PINGs dispatched immediately
+7. ✅ **CTCP VERSION response** — replies with version string
+8. ✅ **Message routing** — PRIVMSG → trigger check → find/create session → `run-agent` → PRIVMSG reply
+9. ✅ **Trigger detection** — nick mention or `nick:` prefix for channels; any message for DMs
+10. ✅ **Flood protection** — background flood-sender thread, 2 msg/sec max (`*irc-send-interval*` = 0.5s)
+11. ✅ **Reconnection** — exponential backoff on disconnect (5s → 10s → 20s … max 300s)
+12. ✅ **Nick collision handling** — 433/436 → append `_` and retry
+13. ✅ **Response splitting** — long responses split into multiple PRIVMSGs at word boundaries (max 400 chars)
+14. ✅ **Allowed-users** — optional nick allowlist per connection
+15. ✅ **`register-channel :irc`** — EQL-specialised method; stores config, user calls `start-irc`
+16. ✅ **`start-irc` / `stop-irc`** — lifecycle; graceful QUIT on disconnect
+17. ✅ **`clambda-core.asd` updated** — v0.6.0; `usocket` + `cl+ssl` deps; `src/irc` component
+18. ✅ **87/87 unit tests** in `t/test-irc.lisp` — all pass
+    - IRC line parser (11 tests)
+    - IRC line builder (9 tests)
+    - prefix-nick extraction (5 tests)
+    - Flood queue mechanics (2 tests)
+    - Trigger/message-body extraction (7 tests)
+    - Response splitting (4 tests)
+    - Struct construction (3 tests)
+    - Allowed-users (1 test)
+    - Round-trip parse/build (2 tests)
+
+---
+
 ## What's Left
 
-### For Channel Plugins (Telegram, Discord, etc.)
+### For Channel Plugins (Discord, etc.)
 
-1. **Telegram channel** — `clambda/channels/telegram.lisp`
-   - Use `dexador` to call Telegram Bot API
-   - Implement `channel-send` / `channel-receive` generics for `telegram-channel`
-   - Long-poll or webhook receiver with Hunchentoot
-   - Effort: Medium (2–3 days)
-
-2. **Discord channel** — `clambda/channels/discord.lisp`
+1. **Discord channel** — `clambda/channels/discord.lisp`
    - Use Discord REST API + gateway WebSocket for real-time
    - Effort: Large (1 week+, WebSocket dependency needed)
 
-3. **Skills system** — `clambda/skills`
+2. **Skills system** — `clambda/skills`
    - Scan a skills directory for `SKILL.md` files
    - Parse tool definitions from skill metadata
    - Inject skill instructions into agent system prompt
    - Effort: Medium (2–3 days)
 
-4. **Browser control** — `clambda/browser`
+3. **Browser control** — `clambda/browser`
    - Shell out to Playwright or Puppeteer (Node.js)
    - Or wrap a headless browser library
    - Effort: Large (1–2 weeks)
 
-5. **Cron / scheduled tasks** — `clambda/cron`
+4. **Cron / scheduled tasks** — `clambda/cron`
    - Periodic agent triggers
    - Integrate with bordeaux-threads sleep-loop or a proper scheduler
    - Effort: Small-Medium (1–2 days)

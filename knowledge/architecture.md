@@ -341,6 +341,104 @@ Users just write `(register-channel :telegram :token "...")` in init.lisp.
 
 ---
 
+---
+
+## Layer 6c: IRC Client Channel (`clambda/irc`)
+
+**File:** `src/irc.lisp`
+**Package:** `clambda/irc`
+**Loaded:** after `clambda/config` (specialises `register-channel`)
+**New deps:** `usocket` (TCP), `cl+ssl` (TLS)
+
+Raw IRC protocol implementation — no external IRC library, no DCC, no CTCP beyond VERSION.
+
+### Key Data: `irc-connection` struct (`:conc-name irc-`)
+
+```
+server, port, tls-p, nick, realname    — connection config
+channels, nickserv-password            — channel config
+allowed-users, trigger-prefix          — routing config
+socket, stream                         — live connection state
+reader-thread, flood-thread            — background threads
+flood-queue, flood-lock, flood-cvar   — rate-limited send queue
+running-p, reconnect-delay             — lifecycle state
+agent, sessions, sessions-lock         — per-target session routing
+```
+
+### Connection & Protocol
+
+```lisp
+;; IRC line format: [:prefix] COMMAND [params...] [:trailing]
+(parse-irc-line ":nick!u@h PRIVMSG #chan :hello")
+;; => (:prefix "nick!u@h" :command "PRIVMSG" :params ("#chan") :trailing "hello")
+
+(irc-build-line "PRIVMSG" '("#chan") "hello")
+;; => "PRIVMSG #chan :hello"
+
+(prefix-nick "alice!alice@libera.chat")
+;; => "alice"
+```
+
+### Threading Model
+
+```
+start-irc
+  ├── bt:make-thread → %flood-sender-loop
+  │     Dequeues raw lines at *IRC-SEND-INTERVAL* (0.5s = 2/sec max)
+  │     Writes line\r\n, force-output, sleeps
+  │
+  └── bt:make-thread → %reader-loop
+        CONNECT (usocket:socket-connect + cl+ssl:make-ssl-client-stream for TLS)
+        %register (NICK + USER, sent immediately bypassing flood queue)
+        %read-loop (read-line loop, %dispatch-line per line)
+        ON DISCONNECT:
+          if running-p: sleep reconnect-delay (5→10→20…→300s), reconnect
+          else: exit
+
+Per inbound PRIVMSG that triggers:
+  bt:make-thread → %route-message
+    %find-or-create-session (per reply-target: channel or nick)
+    run-agent session message
+    irc-send-privmsg (splits long responses, queues via flood queue)
+```
+
+### Message Routing
+
+- **Channel message**: trigger = nick mentioned OR starts with `nick:` (configurable)
+- **DM (PRIVMSG to bot nick)**: always triggers
+- **allowed-users**: if set, only nicks in list can trigger
+- **CTCP VERSION**: replied with version notice, not routed to agent
+
+### Reconnection
+
+```
+On disconnect → check running-p → sleep reconnect-delay → reconnect
+reconnect-delay: 5s initial, doubles each attempt, caps at 300s (5 min)
+Reset to 5s on successful RPL_WELCOME (001)
+```
+
+### User API
+
+```lisp
+;; In init.lisp:
+(register-channel :irc
+  :server "irc.libera.chat" :port 6697 :tls t
+  :nick "clambda" :channels '("#clambda")
+  :nickserv-password "s3cr3t"
+  :allowed-users '("alice" "bob"))
+
+(add-hook '*after-init-hook* #'start-irc)
+
+;; Direct:
+(start-irc :server "irc.libera.chat" :nick "clambda" :channels '("#test"))
+(stop-irc)
+(irc-connected-p)
+(irc-send-privmsg "#test" "Hello channel!")
+(irc-join "#another-channel")
+```
+
+---
+
 ## 5. Extension Points for OpenClaw Rewrite
 
 ### What's already implemented (as of Layer 5 Phase 3)
@@ -369,8 +467,9 @@ Users just write `(register-channel :telegram :token "...")` in init.lisp.
 | OpenClaw Feature | CL Gap | Priority |
 |-----------------|--------|---------|
 | Emacs-style config (init.lisp) | ✅ Done: `clambda/config` Layer 6a | — |
+| Telegram channel plugin | ✅ Done: `clambda/telegram` Layer 6b | — |
+| IRC channel plugin | ✅ Done: `clambda/irc` Layer 6c | — |
 | Skills system (SKILL.md loading) | Not implemented | High |
-| Telegram channel plugin | Not implemented | Medium |
 | Discord channel plugin | Not implemented | Medium |
 | Web browser control | Not implemented | Low |
 | Canvas / UI presentation | Not implemented | Low |

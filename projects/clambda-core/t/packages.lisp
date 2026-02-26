@@ -16,7 +16,8 @@
                 #:telegram-channel-running
                 #:telegram-channel-last-update-id
                 #:telegram-api-url
-                #:allowed-user-p)
+                #:allowed-user-p
+                #:process-update)
   ;; Internal helpers accessed via :: for white-box testing
   ;; (clambda/telegram::%extract-message-fields ...)
   ;; (clambda/telegram::%plist->ht ...)

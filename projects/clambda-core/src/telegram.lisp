@@ -187,8 +187,9 @@ Rules:
   - If an allowlist is set, USER-ID must appear in it (compared with EQL).
     Any integer user-id not in the list is rejected."
   (let ((allowed (telegram-channel-allowed-users chan)))
-    (or (null allowed)
-        (member user-id allowed :test #'eql))))
+    (if allowed
+        (and (member user-id allowed :test #'eql) t)
+        t)))
 
 ;;;; ─────────────────────────────────────────────────────────────────────────────
 ;;;; § 6. Session Management
