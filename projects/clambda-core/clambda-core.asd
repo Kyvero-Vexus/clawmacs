@@ -3,11 +3,12 @@
 ;;;; The core OpenClaw-inspired agent platform in Common Lisp.
 ;;;; Provides: agent definition, session management, tool protocol,
 ;;;; built-in tools (exec, read, write, list-dir, web-fetch),
-;;;; structured logging, workspace memory, and the agent loop.
+;;;; structured logging, workspace memory, the agent loop,
+;;;; agent registry, sub-agent spawning, channel protocol, HTTP API.
 
 (defsystem "clambda-core"
   :description "Core agent platform architecture in Common Lisp"
-  :version "0.2.0"
+  :version "0.3.0"
   :author "Gensym <gensym@cl-team>"
   :license "MIT"
   :depends-on ("cl-llm"
@@ -15,7 +16,9 @@
                "com.inuoe.jzon"
                "uiop"
                "dexador"
-               "cl-ppcre")
+               "cl-ppcre"
+               "bordeaux-threads"
+               "hunchentoot")
   :serial t
   :components ((:file "src/packages")
                (:file "src/conditions")
@@ -25,7 +28,12 @@
                (:file "src/logging")
                (:file "src/memory")
                (:file "src/builtins")
-               (:file "src/loop"))
+               (:file "src/loop")
+               ;; Layer 5 Phase 2
+               (:file "src/registry")
+               (:file "src/subagents")
+               (:file "src/channels")
+               (:file "src/http-server"))
   :in-order-to ((test-op (test-op "clambda-core/tests"))))
 
 (defsystem "clambda-core/tests"

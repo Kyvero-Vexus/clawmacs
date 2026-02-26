@@ -25,6 +25,7 @@
 | 12 | 2026-02-26 | packages | `clambda/loop` missing accessor imports for CLOS class |
 | 13 | 2026-02-26 | idiom/assert | `(assert cond "message")` → "value not of type LIST" |
 | 14 | 2026-02-26 | runtime/json | Nested plist → JSON array not object (shallow `plist->object`) |
+| 16 | 2026-02-26 | idiom/bordeaux-threads | `bt:condition-broadcast` doesn't exist in bordeaux-threads v0.9.4 |
 
 ---
 
@@ -185,3 +186,14 @@
   Or just use `uiop:ensure-directory-pathname` directly — it accepts both strings and pathnames.
 **Lesson:** `uiop:ensure-directory-pathname` already handles strings. Don't wrap its output in `parse-native-namestring`. When writing functions that accept workspace paths, accept both strings and pathnames with an `(if (stringp p) ...)` guard.
 **Tags:** #uiop #pathnames #idiom #runtime
+
+---
+
+## Category: idiom/bordeaux-threads
+
+### #16 — 2026-02-26
+**What:** Used `bt:condition-broadcast` to wake all waiters on a condition variable when closing a `queue-channel`. SBCL/bordeaux-threads v0.9.4 raised a READ error at compile time: "Symbol CONDITION-BROADCAST not found in the BORDEAUX-THREADS package."
+**Why:** bordeaux-threads v0.9.4 only exports `bt:condition-notify` (wake one waiter) and `bt:condition-wait`. There is no `condition-broadcast`.
+**Fix:** Replace `bt:condition-broadcast` with `bt:condition-notify`. For the close case, a single notify is sufficient since receivers check the `open-p` slot and re-enter the wait or exit.
+**Lesson:** bordeaux-threads is minimal. Check the full export list with `(loop for s being the external-symbols of :bordeaux-threads ...)` before assuming POSIX names exist. There is no `condition-broadcast`, `condition-signal`, or `thread-join` — use `bt:condition-notify` and `bt:join-thread` respectively.
+**Tags:** #bordeaux-threads #threads #conditions #idiom

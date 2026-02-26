@@ -190,6 +190,123 @@
    #:loop-options-stream
    #:loop-options-verbose))
 
+;;; ── Agent Registry ───────────────────────────────────────────────────────────
+
+(defpackage #:clambda/registry
+  (:use #:cl)
+  (:import-from #:clambda/agent
+                #:agent #:make-agent
+                #:agent-name #:agent-role #:agent-model
+                #:agent-workspace-path #:agent-system-prompt
+                #:agent-client #:agent-tool-registry)
+  (:export
+   ;; Global registry
+   #:*agent-registry*
+   ;; Operations
+   #:register-agent
+   #:find-agent
+   #:list-agents
+   #:unregister-agent
+   #:clear-registry
+   ;; Declarative definition
+   #:define-agent
+   ;; Agent spec
+   #:agent-spec
+   #:make-agent-spec
+   #:agent-spec-name
+   #:agent-spec-model
+   #:agent-spec-system-prompt
+   #:agent-spec-tools
+   #:agent-spec-role
+   #:agent-spec-client
+   ;; Instantiation
+   #:instantiate-agent-spec))
+
+;;; ── Sub-agent Spawning ───────────────────────────────────────────────────────
+
+(defpackage #:clambda/subagents
+  (:use #:cl)
+  (:import-from #:clambda/agent
+                #:agent #:make-agent
+                #:agent-name #:agent-client #:agent-model
+                #:agent-tool-registry)
+  (:import-from #:clambda/session
+                #:session #:make-session
+                #:session-id)
+  (:import-from #:clambda/loop
+                #:run-agent #:make-loop-options)
+  (:import-from #:clambda/registry
+                #:agent-spec #:instantiate-agent-spec)
+  (:export
+   ;; Handle struct
+   #:subagent-handle
+   #:subagent-handle-thread
+   #:subagent-handle-session
+   #:subagent-handle-status
+   #:subagent-handle-result
+   #:subagent-handle-error
+   ;; Operations
+   #:spawn-subagent
+   #:subagent-wait
+   #:subagent-status
+   #:subagent-kill))
+
+;;; ── Channel Protocol ─────────────────────────────────────────────────────────
+
+(defpackage #:clambda/channels
+  (:use #:cl)
+  (:export
+   ;; Abstract class
+   #:channel
+   ;; Generic protocol
+   #:channel-send
+   #:channel-receive
+   #:channel-poll
+   #:channel-close
+   #:channel-open-p
+   ;; REPL channel
+   #:repl-channel
+   #:make-repl-channel
+   #:repl-channel-input
+   #:repl-channel-output
+   ;; Queue channel
+   #:queue-channel
+   #:make-queue-channel
+   #:queue-channel-queue
+   #:queue-channel-lock
+   #:queue-channel-cvar
+   ;; Conditions
+   #:channel-closed-error
+   #:channel-timeout-error))
+
+;;; ── HTTP API Server ──────────────────────────────────────────────────────────
+
+(defpackage #:clambda/http-server
+  (:use #:cl)
+  (:import-from #:clambda/session
+                #:session #:make-session #:session-id #:session-messages)
+  (:import-from #:clambda/registry
+                #:*agent-registry* #:find-agent #:list-agents
+                #:instantiate-agent-spec #:agent-spec-name)
+  (:import-from #:clambda/loop
+                #:run-agent #:make-loop-options)
+  (:import-from #:clambda/channels
+                #:queue-channel #:make-queue-channel
+                #:channel-send #:channel-receive #:channel-poll)
+  (:export
+   ;; Server lifecycle
+   #:*default-port*
+   #:start-server
+   #:stop-server
+   #:server-running-p
+   #:restart-server
+   ;; Active server instance
+   #:*server*
+   ;; Session store (for the HTTP server)
+   #:*http-sessions*
+   #:http-session-get
+   #:http-session-create))
+
 ;;; ── Top-level convenience package ────────────────────────────────────────────
 
 (defpackage #:clambda
@@ -236,6 +353,34 @@
                 #:clambda-error #:agent-error #:session-error
                 #:tool-not-found #:tool-execution-error
                 #:agent-loop-error)
+  (:import-from #:clambda/registry
+                #:*agent-registry*
+                #:register-agent #:find-agent #:list-agents
+                #:unregister-agent #:clear-registry
+                #:define-agent
+                #:agent-spec #:make-agent-spec
+                #:agent-spec-name #:agent-spec-model
+                #:agent-spec-system-prompt #:agent-spec-tools
+                #:agent-spec-role #:agent-spec-client
+                #:instantiate-agent-spec)
+  (:import-from #:clambda/subagents
+                #:subagent-handle
+                #:subagent-handle-thread #:subagent-handle-session
+                #:subagent-handle-status #:subagent-handle-result
+                #:subagent-handle-error
+                #:spawn-subagent #:subagent-wait
+                #:subagent-status #:subagent-kill)
+  (:import-from #:clambda/channels
+                #:channel #:channel-send #:channel-receive
+                #:channel-poll #:channel-close #:channel-open-p
+                #:repl-channel #:make-repl-channel
+                #:queue-channel #:make-queue-channel
+                #:channel-closed-error #:channel-timeout-error)
+  (:import-from #:clambda/http-server
+                #:*default-port* #:start-server #:stop-server
+                #:server-running-p #:restart-server
+                #:*server* #:*http-sessions*
+                #:http-session-get #:http-session-create)
   (:export
    ;; Agent
    #:agent #:make-agent
@@ -277,4 +422,32 @@
    ;; Conditions
    #:clambda-error #:agent-error #:session-error
    #:tool-not-found #:tool-execution-error
-   #:agent-loop-error))
+   #:agent-loop-error
+   ;; Registry
+   #:*agent-registry*
+   #:register-agent #:find-agent #:list-agents
+   #:unregister-agent #:clear-registry
+   #:define-agent
+   #:agent-spec #:make-agent-spec
+   #:agent-spec-name #:agent-spec-model
+   #:agent-spec-system-prompt #:agent-spec-tools
+   #:agent-spec-role #:agent-spec-client
+   #:instantiate-agent-spec
+   ;; Sub-agents
+   #:subagent-handle
+   #:subagent-handle-thread #:subagent-handle-session
+   #:subagent-handle-status #:subagent-handle-result
+   #:subagent-handle-error
+   #:spawn-subagent #:subagent-wait
+   #:subagent-status #:subagent-kill
+   ;; Channels
+   #:channel #:channel-send #:channel-receive
+   #:channel-poll #:channel-close #:channel-open-p
+   #:repl-channel #:make-repl-channel
+   #:queue-channel #:make-queue-channel
+   #:channel-closed-error #:channel-timeout-error
+   ;; HTTP server
+   #:*default-port* #:start-server #:stop-server
+   #:server-running-p #:restart-server
+   #:*server* #:*http-sessions*
+   #:http-session-get #:http-session-create))
