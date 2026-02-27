@@ -94,6 +94,14 @@ Useful from init.lisp or the REPL to discover what's configurable."
   :type integer
   :doc "Default maximum number of turns per agent loop run.")
 
+(defoption *default-context-window* 32768
+  :type integer
+  :doc "Approximate model context window used for proactive compaction.")
+
+(defoption *context-compaction-keep-last-messages* 12
+  :type integer
+  :doc "Number of most recent messages preserved verbatim during context compaction.")
+
 (defoption *default-stream* nil
   :type boolean
   :doc "If T, use streaming mode by default for LLM calls.")

@@ -112,6 +112,57 @@ The LLM is asked to return pure JSON. If parsing fails, returns NIL."
             ""))
     (error () "")))
 
+(defun %estimate-message-tokens (msg)
+  (let* ((content (or (cl-llm/protocol:message-content msg) ""))
+         (chars (length content)))
+    ;; Rough heuristic: 1 token ~= 4 chars.
+    (max 1 (ceiling chars 4))))
+
+(defun %context-token-estimate (messages)
+  (reduce #'+ messages :key #'%estimate-message-tokens :initial-value 0))
+
+(defun %summarize-old-messages (client model older-messages)
+  (let ((payload (with-output-to-string (out)
+                   (dolist (m older-messages)
+                     (format out "[~(~a~)] ~a~%"
+                             (cl-llm/protocol:message-role m)
+                             (or (cl-llm/protocol:message-content m) "")))))
+        (prompt "Summarize the conversation history below for future assistant context. Keep key facts, decisions, constraints, and unresolved tasks. Be concise and factual.")
+        (end "Return plain text only."))
+    (cl-llm:chat client
+                 (list (cl-llm/protocol:system-message prompt)
+                       (cl-llm/protocol:user-message (format nil "~a~2%~a" payload end)))
+                 :model model)))
+
+(defun %maybe-compact-session-context (session)
+  (let* ((agent (session-agent session))
+         (messages (clawmacs/session:session-messages session))
+         (window (or (and (boundp 'clawmacs/config::*default-context-window*)
+                          clawmacs/config::*default-context-window*)
+                     32768))
+         (threshold (floor (* window 0.85)))
+         (keep-last (or (and (boundp 'clawmacs/config::*context-compaction-keep-last-messages*)
+                             clawmacs/config::*context-compaction-keep-last-messages*)
+                        12))
+         (estimate (max (clawmacs/session:session-total-tokens session)
+                        (%context-token-estimate messages))))
+    (when (and (> estimate threshold)
+               (> (length messages) keep-last))
+      (let* ((split (- (length messages) keep-last))
+             (older (subseq messages 0 split))
+             (recent (subseq messages split))
+             (summary (handler-case
+                          (%summarize-old-messages
+                           (clawmacs/agent:agent-client agent)
+                           (clawmacs/agent:agent-model agent)
+                           older)
+                        (error () "Conversation summary unavailable; older messages compacted."))))
+        (setf (clawmacs/session:session-messages session)
+              (cons (cl-llm/protocol:system-message
+                     (format nil "Conversation summary:\n~a" summary))
+                    recent)))))
+  session)
+
 (defun %inject-pending-agent-messages (session)
   (let* ((agent (session-agent session))
          (pending (clawmacs/registry:consume-agent-messages
@@ -285,6 +336,7 @@ OPTIONS — a LOOP-OPTIONS struct (default: standard options)."
                      (clawmacs/tools:tool-definitions-for-llm registry)))
          (messages (progn
                      (%inject-pending-agent-messages session)
+                     (%maybe-compact-session-context session)
                      (build-messages session)))
          (verbose  (loop-options-verbose opts)))
 

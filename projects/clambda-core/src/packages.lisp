@@ -444,6 +444,8 @@
    ;; Built-in options (defoption-defined variables)
    #:*default-model*
    #:*default-max-turns*
+   #:*default-context-window*
+   #:*context-compaction-keep-last-messages*
    #:*default-stream*
    #:*log-level*
    #:*startup-message*
@@ -743,6 +745,7 @@
                 #:define-user-tool #:register-user-tool!
                 #:merge-user-tools! #:*user-tool-registry*
                 #:*default-model* #:*default-max-turns*
+                #:*default-context-window* #:*context-compaction-keep-last-messages*
                 #:*default-stream* #:*log-level* #:*startup-message*
                 #:*workspace-inject-files*
                 #:*workspace-inject-refresh-interval*
@@ -902,6 +905,7 @@
    #:define-user-tool #:register-user-tool!
    #:merge-user-tools! #:*user-tool-registry*
    #:*default-model* #:*default-max-turns*
+   #:*default-context-window* #:*context-compaction-keep-last-messages*
    #:*default-stream* #:*log-level* #:*startup-message*
    #:*workspace-inject-files*
    #:*workspace-inject-refresh-interval*
@@ -966,6 +970,7 @@
                 #:define-user-tool #:register-user-tool!
                 #:merge-user-tools! #:*user-tool-registry*
                 #:*default-model* #:*default-max-turns*
+                #:*default-context-window* #:*context-compaction-keep-last-messages*
                 #:*default-stream* #:*log-level* #:*startup-message*
                 #:*workspace-inject-files*
                 #:*workspace-inject-refresh-interval*
@@ -1041,6 +1046,7 @@
    #:define-user-tool #:register-user-tool!
    #:merge-user-tools! #:*user-tool-registry*
    #:*default-model* #:*default-max-turns*
+   #:*default-context-window* #:*context-compaction-keep-last-messages*
    #:*default-stream* #:*log-level* #:*startup-message*
    #:*workspace-inject-files*
    #:*workspace-inject-refresh-interval*
