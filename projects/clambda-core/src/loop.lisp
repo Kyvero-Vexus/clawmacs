@@ -99,12 +99,30 @@ The LLM is asked to return pure JSON. If parsing fails, returns NIL."
 
 ;;; ── Helpers ──────────────────────────────────────────────────────────────────
 
+(defun %agent-memory-context (agent)
+  "Load memory context from the agent workspace, if available."
+  (handler-case
+      (let* ((ws (or (clawmacs/agent::agent-workspace agent)
+                     (ignore-errors (uiop:ensure-directory-pathname
+                                     (clawmacs/agent:agent-workspace-path agent)))))
+             (mem (and ws (clawmacs/memory:load-workspace-memory ws :subdirs '("memory"))))
+             (ctx (and mem (clawmacs/memory:memory-context-string mem))))
+        (if (and ctx (> (length ctx) 0))
+            (concatenate 'string ctx "~%")
+            ""))
+    (error () "")))
+
 (defun build-messages (session)
   "Build the full message list for an LLM call: system prompt + history."
   (let* ((agent (session-agent session))
          (sys-prompt (clawmacs/agent:agent-effective-system-prompt agent))
-         (history (clawmacs/session:session-messages session)))
-    (cons (cl-llm/protocol:system-message sys-prompt) history)))
+         (history (clawmacs/session:session-messages session))
+         (mem-context (%agent-memory-context agent)))
+    (cons (cl-llm/protocol:system-message
+           (if (and mem-context (> (length mem-context) 0))
+               (concatenate 'string mem-context sys-prompt)
+               sys-prompt))
+          history)))
 
 (defun handle-tool-calls (session registry tool-calls verbose &optional opts)
   "Execute all TOOL-CALLS via REGISTRY and add results to SESSION.
@@ -207,6 +225,37 @@ Returns a list of TOOL-CALL structs, or NIL."
     (when choice
       (cl-llm/protocol:choice-finish-reason choice))))
 
+(defun %retryable-http-error-p (condition)
+  (and (typep condition 'cl-llm/conditions:http-error)
+       (member (cl-llm/conditions:http-error-status condition)
+               '(429 500 502 503 504))))
+
+(defun %chat-with-fallbacks (client messages &key model tools stream callback)
+  "Call cl-llm chat/chat-stream with fallback model routing on retryable failures."
+  (let* ((fallbacks (or (and (boundp 'clawmacs/config::*fallback-models*)
+                             clawmacs/config::*fallback-models*)
+                        '()))
+         (models (remove nil (cons model fallbacks) :test #'equal)))
+    (loop :for m :in models
+          :do (handler-case
+                  (return (if stream
+                              (cl-llm:chat-stream client messages callback :model m :tools tools)
+                              (cl-llm:chat client messages :model m :tools tools)))
+                (cl-llm/conditions:retryable-error ()
+                  (when (not (equal m (car (last models))))
+                    (format *error-output* "~&[clawmacs/loop] retryable error, trying fallback model: ~a~%" m)))
+                (cl-llm/conditions:http-error (e)
+                  (if (%retryable-http-error-p e)
+                      (when (not (equal m (car (last models))))
+                        (format *error-output* "~&[clawmacs/loop] HTTP ~a on model ~a, trying fallback.~%"
+                                (cl-llm/conditions:http-error-status e) m))
+                      (error e)))))
+    ;; Last model attempt without swallowing non-retryable conditions.
+    (let ((last-model (or (car (last models)) model)))
+      (if stream
+          (cl-llm:chat-stream client messages callback :model last-model :tools tools)
+          (cl-llm:chat client messages :model last-model :tools tools)))))
+
 ;;; ── Single turn ──────────────────────────────────────────────────────────────
 
 (defun agent-turn (session &key options)
@@ -243,21 +292,22 @@ OPTIONS — a LOOP-OPTIONS struct (default: standard options)."
            (if (loop-options-stream opts)
                ;; Streaming — accumulate and fake a response
                (let ((full-text
-                      (cl-llm:chat-stream
+                      (%chat-with-fallbacks
                        client messages
-                       (lambda (delta)
-                         (when *on-stream-delta*
-                           (funcall *on-stream-delta* delta))
-                         (when verbose
-                           (write-string delta)
-                           (finish-output)))
                        :model model
-                       :tools tools)))
+                       :tools tools
+                       :stream t
+                       :callback (lambda (delta)
+                                   (when *on-stream-delta*
+                                     (funcall *on-stream-delta* delta))
+                                   (when verbose
+                                     (write-string delta)
+                                     (finish-output))))))
                  ;; Build a pseudo-response from streamed text
                  ;; (no tool calls in streaming for now)
                  (list :text full-text :tool-calls nil :raw nil))
                ;; Non-streaming — structured response
-               (cl-llm:chat client messages :model model :tools tools))))
+               (%chat-with-fallbacks client messages :model model :tools tools))))
 
       ;; Handle streaming pseudo-response
       (when (and (listp response) (eq (car response) :text))

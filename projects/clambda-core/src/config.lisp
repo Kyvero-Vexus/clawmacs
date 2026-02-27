@@ -106,6 +106,14 @@ Useful from init.lisp or the REPL to discover what's configurable."
   :type (or string null)
   :doc "If non-nil, print this message to *standard-output* after init.lisp loads.")
 
+(defoption *fallback-models* nil
+  :type list
+  :doc "Fallback model strings tried when the primary model fails with retryable errors.")
+
+(defoption *heartbeat-interval* nil
+  :type (or null integer)
+  :doc "Seconds between heartbeat checks for registered agents. NIL disables heartbeats.")
+
 ;;;; ─────────────────────────────────────────────────────────────────────────────
 ;;;; § 4. Hook System
 ;;;; ─────────────────────────────────────────────────────────────────────────────
