@@ -1,5 +1,5 @@
 ;;;; t/packages.lisp — Test packages for clambda-core
-;;;; Updated in Layer 8: added clambda-core/tests/cron and clambda-core/tests/remote-api
+;;;; Updated in Layer 9: added superpowers tests (condition recovery, SWANK, image, define-agent)
 
 (defpackage #:clambda-core/tests
   (:use #:cl #:clambda)
@@ -106,3 +106,60 @@
                 #:schedule-task #:cancel-task #:find-task
                 #:list-tasks #:clear-tasks #:task-info
                 #:*cron-sleep-interval*))
+
+;;; ── Layer 9: Lisp Superpowers tests ──────────────────────────────────────────
+
+(defpackage #:clambda-core/tests/superpowers
+  (:use #:cl #:parachute)
+  ;; Condition system
+  (:import-from #:clambda/conditions
+                #:tool-execution-error
+                #:tool-execution-error-tool-name
+                #:tool-execution-error-cause
+                #:tool-execution-error-input
+                #:agent-turn-error
+                #:agent-turn-error-session
+                #:agent-turn-error-cause
+                #:retry-with-fixed-input
+                #:skip-tool-call)
+  ;; Tools (for dispatch-tool-call testing)
+  (:import-from #:clambda/tools
+                #:make-tool-registry
+                #:register-tool!
+                #:dispatch-tool-call
+                #:tool-result-ok
+                #:tool-result-error
+                #:format-tool-result
+                #:copy-tools-to-registry)
+  ;; Registry + define-agent
+  (:import-from #:clambda/registry
+                #:define-agent
+                #:find-agent
+                #:register-agent
+                #:unregister-agent
+                #:clear-registry
+                #:agent-spec
+                #:agent-spec-p
+                #:make-agent-spec
+                #:agent-spec-name
+                #:agent-spec-model
+                #:agent-spec-system-prompt
+                #:agent-spec-tools
+                #:agent-spec-max-turns
+                #:instantiate-agent-spec)
+  ;; SWANK
+  (:import-from #:clambda/swank
+                #:*swank-port*
+                #:swank-running-p
+                #:start-swank
+                #:stop-swank)
+  ;; Image
+  (:import-from #:clambda/image
+                #:clambda-main
+                #:save-clambda-image)
+  ;; Protocol (for making mock tool calls)
+  (:import-from #:cl-llm/protocol
+                #:make-tool-call
+                #:tool-call-id
+                #:tool-call-function-name
+                #:tool-call-function-arguments))

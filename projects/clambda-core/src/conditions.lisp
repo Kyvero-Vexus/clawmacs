@@ -37,12 +37,18 @@
 
 (define-condition tool-execution-error (clambda-error)
   ((tool-name :initarg :tool-name :reader tool-execution-error-tool-name)
-   (cause     :initarg :cause     :reader tool-execution-error-cause))
+   (cause     :initarg :cause     :reader tool-execution-error-cause)
+   (input     :initarg :input     :reader tool-execution-error-input
+              :initform nil
+              :documentation "The arguments hash-table that caused the failure (or NIL)."))
   (:report (lambda (c s)
              (format s "Error executing tool ~s: ~a"
                      (tool-execution-error-tool-name c)
                      (tool-execution-error-cause c))))
-  (:documentation "Signalled when a tool handler signals an error during dispatch."))
+  (:documentation
+   "Signalled when a tool handler signals an error during dispatch.
+Establishes the RETRY-WITH-FIXED-INPUT restart so the LLM (or a human
+via SLIME) can supply corrected arguments and retry without unwinding."))
 
 ;;; ── Loop errors ──────────────────────────────────────────────────────────────
 
@@ -51,6 +57,16 @@
   (:report (lambda (c s)
              (write-string (agent-loop-error-message c) s)))
   (:documentation "Error in the agent loop (e.g., max turns exceeded)."))
+
+(define-condition agent-turn-error (clambda-error)
+  ((session :initarg :session :reader agent-turn-error-session :initform nil)
+   (cause   :initarg :cause   :reader agent-turn-error-cause   :initform nil))
+  (:report (lambda (c s)
+             (format s "Agent turn error~@[: ~a~]"
+                     (agent-turn-error-cause c))))
+  (:documentation
+   "Signalled when an agent turn fails at the LLM-call level (not a tool error).
+Offers the ABORT-AGENT-LOOP restart."))
 
 ;;; ── Budget errors ────────────────────────────────────────────────────────────
 
@@ -72,8 +88,20 @@ CURRENT — the actual value that exceeded it."))
 
 ;;; ── Restart names ────────────────────────────────────────────────────────────
 
-;; These are just symbols used as restart names — no need to define them specially.
-;; Documented here for reference:
-;;   SKIP-TOOL-CALL — skip the failing tool call, return empty result
-;;   RETRY-TOOL-CALL — retry the tool call (caller must re-invoke)
+;; Restart name symbols. Defined (via export) in this package so that all
+;; packages that establish or invoke restarts use the SAME symbol object.
+;;
+;;   RETRY-WITH-FIXED-INPUT — retry a failing tool call with corrected args
+;;     Accepts one argument: the new args hash-table.
+;;     Established by dispatch-tool-call. Invoked by the LLM repair handler
+;;     in handle-tool-calls or by a human via SLIME.
+;;
+;;   SKIP-TOOL-CALL — skip the failing tool call, return an empty error result
+;;
+;;   RETRY-TOOL-CALL — retry the tool call without changes (for transient errors)
+;;
 ;;   ABORT-AGENT-LOOP — terminate the agent loop immediately
+
+;; These symbols are already exported; just document them here.
+;; They work as restart names because restart-case and invoke-restart
+;; compare symbols by identity (package + name).

@@ -38,6 +38,65 @@ VERBOSE    — print loop status to *STANDARD-OUTPUT* (default: NIL)."
                       :stream stream
                       :verbose verbose))
 
+;;; ── LLM Auto-Repair ──────────────────────────────────────────────────────────
+
+(defun %ask-llm-for-tool-fix (session condition)
+  "Ask the LLM to provide corrected arguments for a failing tool call.
+
+SESSION — the current agent session (used to get client + model).
+CONDITION — a TOOL-EXECUTION-ERROR condition.
+
+Returns a hash-table of corrected arguments, or NIL if the LLM can't help.
+The LLM is asked to return pure JSON. If parsing fails, returns NIL."
+  (handler-case
+      (let* ((agent   (session-agent session))
+             (client  (clambda/agent:agent-client agent))
+             (model   (clambda/agent:agent-model agent))
+             (tname   (tool-execution-error-tool-name condition))
+             (cause   (tool-execution-error-cause condition))
+             (input   (tool-execution-error-input condition))
+             ;; Describe what failed
+             (input-str
+              (if input
+                  (handler-case
+                      (com.inuoe.jzon:stringify input)
+                    (error () "(unparseable)"))
+                  "{}"))
+             (prompt
+              (format nil
+                      "A tool call failed and needs to be repaired.~2%~
+                       Tool: ~s~%~
+                       Input arguments (JSON): ~a~%~
+                       Error: ~a~2%~
+                       Please provide corrected JSON arguments for this tool call.~%~
+                       Reply with ONLY a JSON object — no explanations, no markdown.~%~
+                       Example: {\"path\": \"/correct/path.txt\"}"
+                      tname input-str cause))
+             (fix-text
+              (cl-llm:chat client
+                           (list (cl-llm/protocol:user-message prompt))
+                           :model model)))
+        ;; Try to extract JSON from the response
+        (when (and fix-text (> (length fix-text) 0))
+          ;; Strip markdown code fences if present
+          (let ((clean (cl-ppcre:regex-replace-all
+                        "```(?:json)?\\s*|\\s*```" fix-text "")))
+            (let ((start (position #\{ clean))
+                  (end   (position #\} clean :from-end t)))
+              (when (and start end (< start end))
+                (handler-case
+                    (com.inuoe.jzon:parse
+                     (subseq clean start (1+ end)))
+                  (error ()
+                    (format *error-output*
+                            "~&[clambda/loop] LLM fix parse error — raw: ~s~%"
+                            clean)
+                    nil)))))))
+    (error (e)
+      (format *error-output*
+              "~&[clambda/loop] LLM auto-repair request failed: ~a~%" e)
+      nil)))
+
 ;;; ── Helpers ──────────────────────────────────────────────────────────────────
 
 (defun build-messages (session)
@@ -47,9 +106,18 @@ VERBOSE    — print loop status to *STANDARD-OUTPUT* (default: NIL)."
          (history (clambda/session:session-messages session)))
     (cons (cl-llm/protocol:system-message sys-prompt) history)))
 
-(defun handle-tool-calls (session registry tool-calls verbose)
+(defun handle-tool-calls (session registry tool-calls verbose &optional opts)
   "Execute all TOOL-CALLS via REGISTRY and add results to SESSION.
-Returns a list of tool result strings."
+Returns a list of tool result strings.
+
+OPTS — a LOOP-OPTIONS struct (used to access the LLM client for auto-repair).
+
+When a tool call fails with TOOL-EXECUTION-ERROR, establishes a
+HANDLER-BIND that asks the LLM to suggest corrected arguments and
+automatically invokes the RETRY-WITH-FIXED-INPUT restart.
+This gives the agent one shot at self-repair before returning an error.
+A human connected via SLIME can also intercept and choose restarts manually."
+  (declare (ignore opts))   ; opts reserved for future per-call budget tracking
   (mapcar
    (lambda (tc)
      (let ((name (cl-llm/protocol:tool-call-function-name tc))
@@ -59,7 +127,32 @@ Returns a list of tool result strings."
        (when *on-tool-call*
          (funcall *on-tool-call* name tc))
 
-       (let* ((result (clambda/tools:dispatch-tool-call registry tc))
+       (let* ((result
+               ;; Install LLM auto-repair handler.
+               ;; The restart (RETRY-WITH-FIXED-INPUT) is established inside
+               ;; dispatch-tool-call via %try-tool-handler. This handler-bind
+               ;; fires while that frame is still on the stack, so it can
+               ;; invoke the restart without unwinding.
+               (handler-bind
+                   ((tool-execution-error
+                     (lambda (c)
+                       (when verbose
+                         (format t
+                                 "~&[tool] ~a failed: ~a — asking LLM for fix...~%"
+                                 name (tool-execution-error-cause c)))
+                       (let ((fixed-args (%ask-llm-for-tool-fix session c)))
+                         (when fixed-args
+                           (when verbose
+                             (format t "~&[tool] LLM provided fix — retrying ~a~%"
+                                     name))
+                           (invoke-restart 'retry-with-fixed-input fixed-args))
+                         ;; If no fix available, fall through to error result
+                         )))
+                    (clambda/conditions:tool-not-found
+                     (lambda (c)
+                       (declare (ignore c))
+                       (invoke-restart 'clambda/conditions:skip-tool-call))))
+                 (clambda/tools:dispatch-tool-call registry tc)))
               (result-str (clambda/tools:format-tool-result result)))
 
          ;; Log tool call
@@ -211,7 +304,7 @@ OPTIONS — a LOOP-OPTIONS struct (default: standard options)."
 
         ;; Dispatch tool calls if any
         (when (and registry tool-calls (not (endp tool-calls)))
-          (handle-tool-calls session registry tool-calls verbose))
+          (handle-tool-calls session registry tool-calls verbose opts))
 
         ;; Return final text if no more tool calls (or after tool execution)
         (when (and text (endp tool-calls))

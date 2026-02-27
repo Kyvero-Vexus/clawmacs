@@ -19,14 +19,19 @@
    #:tool-execution-error
    #:tool-execution-error-tool-name
    #:tool-execution-error-cause
+   #:tool-execution-error-input      ; new: the failing args
    ;; Loop control
    #:agent-loop-error
+   #:agent-turn-error                ; new: LLM-level turn failure
+   #:agent-turn-error-session
+   #:agent-turn-error-cause
    ;; Budget
    #:budget-exceeded
    #:budget-exceeded-kind
    #:budget-exceeded-limit
    #:budget-exceeded-current
-   ;; Restarts
+   ;; Restart name symbols (use the same symbol across packages)
+   #:retry-with-fixed-input          ; new: retry tool with LLM-repaired args
    #:skip-tool-call
    #:retry-tool-call
    #:abort-agent-loop))
@@ -92,6 +97,7 @@
                 #:tool-call-function-arguments)
   (:import-from #:clambda/conditions
                 #:tool-not-found #:tool-execution-error
+                #:retry-with-fixed-input
                 #:skip-tool-call #:retry-tool-call)
   (:export
    ;; Registry
@@ -107,6 +113,8 @@
    ;; Dispatch
    #:dispatch-tool-call
    #:tool-definitions-for-llm
+   ;; Registry operations
+   #:copy-tools-to-registry
    ;; Result
    #:tool-result
    #:tool-result-ok
@@ -185,8 +193,14 @@
                 #:dispatch-tool-call
                 #:format-tool-result)
   (:import-from #:clambda/conditions
-                #:agent-loop-error #:abort-agent-loop
-                #:budget-exceeded)
+                #:agent-loop-error #:agent-turn-error #:abort-agent-loop
+                #:budget-exceeded
+                #:tool-execution-error
+                #:tool-execution-error-tool-name
+                #:tool-execution-error-cause
+                #:tool-execution-error-input
+                #:retry-with-fixed-input
+                #:skip-tool-call)
   (:export
    ;; Main entry points
    #:agent-turn
@@ -226,12 +240,14 @@
    #:define-agent
    ;; Agent spec
    #:agent-spec
+   #:agent-spec-p                     ; struct predicate
    #:make-agent-spec
    #:agent-spec-name
    #:agent-spec-model
    #:agent-spec-system-prompt
    #:agent-spec-tools
    #:agent-spec-role
+   #:agent-spec-max-turns             ; new: per-agent turn limit
    #:agent-spec-client
    ;; Instantiation
    #:instantiate-agent-spec))
@@ -571,6 +587,37 @@
    #:register-browser-tools
    #:make-browser-registry))
 
+;;; ── SWANK/SLIME Server (Layer 9 / Lisp Superpowers P0) ──────────────────────
+;;;
+;;; Built-in SWANK server for live SLIME/Sly inspection, hot-reload, debugging.
+;;; Loaded after clambda/browser. Requires the "swank" ASDF system.
+
+(defpackage #:clambda/swank
+  (:use #:cl)
+  (:import-from #:clambda/config
+                #:defoption)
+  (:export
+   ;; Config option
+   #:*swank-port*
+   ;; Server lifecycle
+   #:start-swank
+   #:stop-swank
+   #:swank-running-p))
+
+;;; ── Image Save/Restore (Layer 9 / Lisp Superpowers P1) ──────────────────────
+;;;
+;;; Save the entire running Clambda system as a SBCL core file / executable.
+;;; Restore it instantly — zero dependency resolution, all config baked in.
+;;; Genera-style: (save-clambda-image) → (./clambda-image)
+
+(defpackage #:clambda/image
+  (:use #:cl)
+  (:export
+   ;; Entry point for saved images
+   #:clambda-main
+   ;; Save function
+   #:save-clambda-image))
+
 ;;; ── Top-level convenience package ────────────────────────────────────────────
 
 (defpackage #:clambda
@@ -627,10 +674,10 @@
                 #:register-agent #:find-agent #:list-agents
                 #:unregister-agent #:clear-registry
                 #:define-agent
-                #:agent-spec #:make-agent-spec
+                #:agent-spec #:agent-spec-p #:make-agent-spec
                 #:agent-spec-name #:agent-spec-model
                 #:agent-spec-system-prompt #:agent-spec-tools
-                #:agent-spec-role #:agent-spec-client
+                #:agent-spec-role #:agent-spec-max-turns #:agent-spec-client
                 #:instantiate-agent-spec)
   (:import-from #:clambda/subagents
                 #:subagent-handle
@@ -712,6 +759,13 @@
                 #:browser-navigate #:browser-snapshot #:browser-screenshot
                 #:browser-click #:browser-type #:browser-evaluate
                 #:register-browser-tools #:make-browser-registry)
+  ;; Lisp Superpowers: SWANK server
+  (:import-from #:clambda/swank
+                #:*swank-port*
+                #:start-swank #:stop-swank #:swank-running-p)
+  ;; Lisp Superpowers: Image save/restore
+  (:import-from #:clambda/image
+                #:clambda-main #:save-clambda-image)
   (:export
    ;; Agent
    #:agent #:make-agent
@@ -729,6 +783,7 @@
    #:register-tool! #:find-tool #:list-tools
    #:define-tool #:dispatch-tool-call
    #:tool-definitions-for-llm
+   #:copy-tools-to-registry
    #:tool-result #:tool-result-ok #:tool-result-error
    #:tool-result-value #:format-tool-result
    ;; Builtins
@@ -754,20 +809,28 @@
    #:memory-context-string
    ;; Conditions
    #:clambda-error #:agent-error #:session-error
-   #:tool-not-found #:tool-execution-error
+   #:tool-not-found
+   #:tool-execution-error
+   #:tool-execution-error-tool-name #:tool-execution-error-cause
+   #:tool-execution-error-input
    #:agent-loop-error
+   #:agent-turn-error
+   #:agent-turn-error-session #:agent-turn-error-cause
    #:budget-exceeded
    #:budget-exceeded-kind #:budget-exceeded-limit
    #:budget-exceeded-current
+   ;; Restart names
+   #:retry-with-fixed-input #:skip-tool-call
+   #:retry-tool-call #:abort-agent-loop
    ;; Registry
    #:*agent-registry*
    #:register-agent #:find-agent #:list-agents
    #:unregister-agent #:clear-registry
    #:define-agent
-   #:agent-spec #:make-agent-spec
+   #:agent-spec #:agent-spec-p #:make-agent-spec
    #:agent-spec-name #:agent-spec-model
    #:agent-spec-system-prompt #:agent-spec-tools
-   #:agent-spec-role #:agent-spec-client
+   #:agent-spec-role #:agent-spec-max-turns #:agent-spec-client
    #:instantiate-agent-spec
    ;; Sub-agents
    #:subagent-handle
@@ -847,7 +910,12 @@
    #:browser-launch #:browser-close #:browser-running-p
    #:browser-navigate #:browser-snapshot #:browser-screenshot
    #:browser-click #:browser-type #:browser-evaluate
-   #:register-browser-tools #:make-browser-registry))
+   #:register-browser-tools #:make-browser-registry
+   ;; Lisp Superpowers: SWANK/SLIME server (P0)
+   #:*swank-port*
+   #:start-swank #:stop-swank #:swank-running-p
+   ;; Lisp Superpowers: Image save/restore (P1)
+   #:clambda-main #:save-clambda-image))
 
 ;;; ── User init package (for init.lisp) ────────────────────────────────────────
 ;;;
@@ -883,7 +951,12 @@
   (:import-from #:clambda/session
                 #:session #:make-session)
   (:import-from #:clambda/registry
-                #:define-agent #:register-agent #:find-agent)
+                #:define-agent #:register-agent #:find-agent
+                #:unregister-agent #:agent-spec-p
+                #:agent-spec #:make-agent-spec
+                #:agent-spec-name #:agent-spec-model
+                #:agent-spec-tools #:agent-spec-max-turns
+                #:instantiate-agent-spec)
   (:import-from #:cl-llm
                 #:make-client)
   (:import-from #:clambda/telegram
@@ -917,6 +990,11 @@
                 #:*api-token* #:start-server #:stop-server
                 #:server-running-p #:restart-server
                 #:*default-port*)
+  ;; Lisp Superpowers — available from init.lisp
+  (:import-from #:clambda/swank
+                #:*swank-port* #:start-swank #:stop-swank #:swank-running-p)
+  (:import-from #:clambda/image
+                #:clambda-main #:save-clambda-image)
   (:export
    ;; Re-export everything imported so users can (use-package :clambda-user)
    ;; from a downstream package if desired.
@@ -939,6 +1017,11 @@
    #:agent-client #:agent-tool-registry
    #:session #:make-session
    #:define-agent #:register-agent #:find-agent
+   #:unregister-agent #:agent-spec-p
+   #:agent-spec #:make-agent-spec
+   #:agent-spec-name #:agent-spec-model
+   #:agent-spec-tools #:agent-spec-max-turns
+   #:instantiate-agent-spec
    #:make-client
    ;; Telegram channel lifecycle (most useful from init.lisp)
    #:start-telegram #:stop-telegram
@@ -970,4 +1053,8 @@
    ;; HTTP server management (Layer 8b)
    #:*api-token* #:start-server #:stop-server
    #:server-running-p #:restart-server
-   #:*default-port*))
+   #:*default-port*
+   ;; Lisp Superpowers: SWANK/SLIME server
+   #:*swank-port* #:start-swank #:stop-swank #:swank-running-p
+   ;; Lisp Superpowers: Image save/restore
+   #:clambda-main #:save-clambda-image))

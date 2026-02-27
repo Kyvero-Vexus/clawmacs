@@ -9,11 +9,14 @@
 ;;;; the Telegram Bot API channel (Layer 6b),
 ;;;; the IRC client channel (Layer 6c),
 ;;;; the Playwright browser control module (Layer 7),
-;;;; and the cron scheduler + remote management API (Layer 8).
+;;;; the cron scheduler + remote management API (Layer 8),
+;;;; and the Lisp Superpowers (Layer 9):
+;;;;   P0: condition-based live error recovery + SWANK/SLIME server
+;;;;   P1: image save/restore + enhanced define-agent DSL
 
 (defsystem "clambda-core"
   :description "Core agent platform architecture in Common Lisp"
-  :version "0.8.0"
+  :version "0.9.0"
   :author "Gensym <gensym@cl-team>"
   :license "AGPL-3.0-or-later"
   :depends-on ("cl-llm"
@@ -26,7 +29,9 @@
                "hunchentoot"
                ;; Layer 6c: IRC raw socket + TLS
                "usocket"
-               "cl+ssl")
+               "cl+ssl"
+               ;; Layer 9 (P0): SWANK/SLIME server for live inspection
+               "swank")
   :serial t
   :components ((:file "src/packages")
                (:file "src/conditions")
@@ -51,7 +56,11 @@
                ;; Layer 6c: IRC client channel (raw sockets)
                (:file "src/irc")
                ;; Layer 7: Playwright browser control
-               (:file "src/browser"))
+               (:file "src/browser")
+               ;; Layer 9 (P0): SWANK/SLIME server for live inspection + hot-reload
+               (:file "src/swank")
+               ;; Layer 9 (P1): Image save/restore (Genera-style)
+               (:file "src/image"))
   :in-order-to ((test-op (test-op "clambda-core/tests"))))
 
 (defsystem "clambda-core/tests"
@@ -68,4 +77,6 @@
                (:file "t/test-browser")
                ;; Layer 8: Cron + Remote Management API tests
                (:file "t/test-cron")
-               (:file "t/test-remote-api")))
+               (:file "t/test-remote-api")
+               ;; Layer 9: Lisp Superpowers tests
+               (:file "t/test-superpowers")))

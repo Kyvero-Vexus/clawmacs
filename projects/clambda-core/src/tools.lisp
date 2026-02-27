@@ -120,12 +120,52 @@ Pass this list to CL-LLM:CHAT's :TOOLS argument."
 
 ;;; ── Dispatch ─────────────────────────────────────────────────────────────────
 
+(defun %try-tool-handler (handler args name)
+  "Try calling HANDLER with ARGS.
+
+Establishes two restarts for error recovery:
+
+  RETRY-WITH-FIXED-INPUT (new-args)
+    Retry the handler with NEW-ARGS (a hash-table) instead of ARGS.
+    This is the restart invoked by the LLM auto-repair handler in the agent
+    loop (or manually from a SLIME debugger).
+
+  SKIP-TOOL-CALL ()
+    Return a TOOL-RESULT-ERROR immediately and continue the agent loop.
+
+When a handler error occurs, signals TOOL-EXECUTION-ERROR with the :INPUT
+slot set to ARGS, so handlers and SLIME users can inspect the failing call."
+  (restart-case
+      (handler-case
+          (let ((raw-result (funcall handler args)))
+            (etypecase raw-result
+              (tool-result raw-result)
+              (string (tool-result-ok raw-result))
+              (t (tool-result-ok (format nil "~a" raw-result)))))
+        (error (e)
+          ;; Re-signal as tool-execution-error (with input attached)
+          (error 'clambda/conditions:tool-execution-error
+                 :tool-name name
+                 :cause e
+                 :input args)))
+    (clambda/conditions:retry-with-fixed-input (new-args)
+      :report "Retry this tool call with fixed arguments (LLM-repaired or human-provided)."
+      (%try-tool-handler handler new-args name))
+    (clambda/conditions:skip-tool-call ()
+      :report "Skip this tool call and return an error result."
+      (tool-result-error (format nil "Tool execution skipped: ~s" name)))))
+
 (defun dispatch-tool-call (registry tool-call)
   "Dispatch a CL-LLM TOOL-CALL through REGISTRY.
 
 Returns a TOOL-RESULT.
 Signals TOOL-NOT-FOUND if the tool isn't registered.
-Wraps handler errors in TOOL-EXECUTION-ERROR (with restarts for SKIP-TOOL-CALL)."
+Signals TOOL-EXECUTION-ERROR (with RETRY-WITH-FIXED-INPUT and SKIP-TOOL-CALL
+restarts) if the handler errors.
+
+The RETRY-WITH-FIXED-INPUT restart is the key Lisp superpower: the condition
+handler in the agent loop asks the LLM to provide corrected arguments, then
+invokes this restart to retry without unwinding the stack."
   (let* ((name (cl-llm/protocol:tool-call-function-name tool-call))
          (raw-args (cl-llm/protocol:tool-call-function-arguments tool-call))
          (entry (find-tool registry name)))
@@ -133,7 +173,7 @@ Wraps handler errors in TOOL-EXECUTION-ERROR (with restarts for SKIP-TOOL-CALL).
     (unless entry
       (restart-case
           (error 'clambda/conditions:tool-not-found :name name)
-        (skip-tool-call ()
+        (clambda/conditions:skip-tool-call ()
           :report "Skip this tool call and return an error result."
           (return-from dispatch-tool-call
             (tool-result-error (format nil "Tool not found: ~s" name))))))
@@ -146,22 +186,27 @@ Wraps handler errors in TOOL-EXECUTION-ERROR (with restarts for SKIP-TOOL-CALL).
                               (com.inuoe.jzon:parse raw-args)))
                   (hash-table raw-args))))
 
-      ;; Invoke handler with error wrapping
-      (restart-case
-          (handler-case
-              (let ((raw-result (funcall (tool-entry-handler entry) args)))
-                ;; Normalize result to TOOL-RESULT
-                (etypecase raw-result
-                  (tool-result raw-result)
-                  (string (tool-result-ok raw-result))
-                  (t (tool-result-ok (format nil "~a" raw-result)))))
-            (error (e)
-              (error 'clambda/conditions:tool-execution-error
-                     :tool-name name
-                     :cause e)))
-        (skip-tool-call ()
-          :report "Skip this tool call and return an error result."
-          (tool-result-error (format nil "Tool execution skipped: ~s" name)))))))
+      (%try-tool-handler (tool-entry-handler entry) args name))))
+
+;;; ── Registry operations ──────────────────────────────────────────────────────
+
+(defun copy-tools-to-registry (source target &optional tool-names)
+  "Copy tools from SOURCE registry to TARGET registry.
+
+If TOOL-NAMES (a list of strings) is supplied, copy only those tools.
+If TOOL-NAMES is NIL, copy ALL tools from SOURCE to TARGET.
+Returns TARGET."
+  (let ((src-table (registry-table source))
+        (dst-table (registry-table target)))
+    (if tool-names
+        (dolist (name tool-names)
+          (let ((entry (gethash name src-table)))
+            (when entry
+              (setf (gethash name dst-table) entry))))
+        (maphash (lambda (name entry)
+                   (setf (gethash name dst-table) entry))
+                 src-table)))
+  target)
 
 ;;; ── DEFINE-TOOL macro ────────────────────────────────────────────────────────
 
