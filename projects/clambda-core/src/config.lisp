@@ -114,6 +114,14 @@ Useful from init.lisp or the REPL to discover what's configurable."
   :type (or null integer)
   :doc "Seconds between heartbeat checks for registered agents. NIL disables heartbeats.")
 
+(defoption *workspace-inject-files* '("AGENTS.md" "SOUL.md" "USER.md" "TOOLS.md" "IDENTITY.md")
+  :type list
+  :doc "Workspace files auto-injected into agent system prompts.")
+
+(defoption *workspace-inject-refresh-interval* 60
+  :type integer
+  :doc "Seconds between workspace injection refresh checks.")
+
 ;;;; ─────────────────────────────────────────────────────────────────────────────
 ;;;; § 4. Hook System
 ;;;; ─────────────────────────────────────────────────────────────────────────────

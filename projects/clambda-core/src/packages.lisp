@@ -446,7 +446,9 @@
    #:*log-level*
    #:*startup-message*
    #:*fallback-models*
-   #:*heartbeat-interval*))
+   #:*heartbeat-interval*
+   #:*workspace-inject-files*
+   #:*workspace-inject-refresh-interval*))
 
 ;;; ── Telegram Channel ─────────────────────────────────────────────────────────
 ;;;
@@ -737,7 +739,9 @@
                 #:define-user-tool #:register-user-tool!
                 #:merge-user-tools! #:*user-tool-registry*
                 #:*default-model* #:*default-max-turns*
-                #:*default-stream* #:*log-level* #:*startup-message*)
+                #:*default-stream* #:*log-level* #:*startup-message*
+                #:*workspace-inject-files*
+                #:*workspace-inject-refresh-interval*)
   (:import-from #:clawmacs/telegram
                 #:telegram-channel #:make-telegram-channel
                 #:telegram-channel-token #:telegram-channel-allowed-users
@@ -893,6 +897,8 @@
    #:merge-user-tools! #:*user-tool-registry*
    #:*default-model* #:*default-max-turns*
    #:*default-stream* #:*log-level* #:*startup-message*
+   #:*workspace-inject-files*
+   #:*workspace-inject-refresh-interval*
    ;; Telegram channel
    #:telegram-channel #:make-telegram-channel
    #:telegram-channel-token #:telegram-channel-allowed-users
@@ -954,6 +960,8 @@
                 #:merge-user-tools! #:*user-tool-registry*
                 #:*default-model* #:*default-max-turns*
                 #:*default-stream* #:*log-level* #:*startup-message*
+                #:*workspace-inject-files*
+                #:*workspace-inject-refresh-interval*
                 #:describe-options #:*option-registry*
                 #:*clawmacs-home* #:clawmacs-home
                 #:load-user-config)
@@ -1025,6 +1033,8 @@
    #:merge-user-tools! #:*user-tool-registry*
    #:*default-model* #:*default-max-turns*
    #:*default-stream* #:*log-level* #:*startup-message*
+   #:*workspace-inject-files*
+   #:*workspace-inject-refresh-interval*
    #:describe-options #:*option-registry*
    #:*clawmacs-home* #:clawmacs-home
    #:tool-registry #:make-tool-registry

@@ -62,7 +62,19 @@
     :initarg :tool-registry
     :accessor agent-tool-registry
     :initform nil
-    :documentation "A CLAMBDA/TOOLS:TOOL-REGISTRY for this agent's tools."))
+    :documentation "A CLAMBDA/TOOLS:TOOL-REGISTRY for this agent's tools.")
+   (workspace-injected-context
+    :initarg :workspace-injected-context
+    :accessor agent-workspace-injected-context
+    :initform nil
+    :type (or null string)
+    :documentation "Cached injected context built from workspace files.")
+   (workspace-injected-at
+    :initarg :workspace-injected-at
+    :accessor agent-workspace-injected-at
+    :initform 0
+    :type integer
+    :documentation "Universal time when workspace-injected-context was last refreshed."))
   (:documentation
    "An agent is the primary actor in clawmacs-core.
 It has an identity (name, role), an LLM backend (client + model),
@@ -117,20 +129,55 @@ Default: ~/.clawmacs/agents/<agent-name>/"
 
 ;;; ── Computed properties ──────────────────────────────────────────────────────
 
+(defun %workspace-injection-stale-p (agent)
+  (let* ((interval (or (and (boundp 'clawmacs/config::*workspace-inject-refresh-interval*)
+                            clawmacs/config::*workspace-inject-refresh-interval*)
+                       60))
+         (last-at (agent-workspace-injected-at agent)))
+    (or (null (agent-workspace-injected-context agent))
+        (<= interval 0)
+        (> (- (get-universal-time) last-at) interval))))
+
+(defun %render-workspace-injected-context (agent)
+  (handler-case
+      (let* ((ws (agent-workspace agent))
+             (files (or (and (boundp 'clawmacs/config::*workspace-inject-files*)
+                             clawmacs/config::*workspace-inject-files*)
+                        '("AGENTS.md" "SOUL.md" "USER.md" "TOOLS.md" "IDENTITY.md"))))
+        (when ws
+          (with-output-to-string (out)
+            (dolist (file files)
+              (let ((p (merge-pathnames file ws)))
+                (when (probe-file p)
+                  (format out "## ~a~%~a~2%" file (uiop:read-file-string p))))))) )
+    (error () nil)))
+
+(defun agent-refresh-workspace-context! (agent)
+  (when (%workspace-injection-stale-p agent)
+    (setf (agent-workspace-injected-context agent)
+          (%render-workspace-injected-context agent)
+          (agent-workspace-injected-at agent)
+          (get-universal-time)))
+  (agent-workspace-injected-context agent))
+
 (defun agent-effective-system-prompt (agent)
   "Return the agent's system prompt, generating a default if not set."
-  (or (agent-system-prompt agent)
-      (let ((who (or (agent-display-name agent) (agent-name agent)))
-            (emoji (agent-emoji agent)))
-        (format nil "You are ~a~@[ ~a~], a ~a AI assistant.~@[
+  (let* ((base (or (agent-system-prompt agent)
+                   (let ((who (or (agent-display-name agent) (agent-name agent)))
+                         (emoji (agent-emoji agent)))
+                     (format nil "You are ~a~@[ ~a~], a ~a AI assistant.~@[
 Theme: ~a~]~@[
 Your workspace is at: ~a~]
 Be helpful, concise, and accurate."
-                who
-                emoji
-                (agent-role agent)
-                (agent-theme agent)
-                (agent-workspace-path agent)))))
+                             who
+                             emoji
+                             (agent-role agent)
+                             (agent-theme agent)
+                             (agent-workspace-path agent)))))
+         (injected (agent-refresh-workspace-context! agent)))
+    (if (and injected (> (length injected) 0))
+        (concatenate 'string injected base)
+        base)))
 
 (defun agent-with-tools (agent tool-registry)
   "Return a new agent with the given TOOL-REGISTRY, sharing all other slots."
@@ -144,4 +191,6 @@ Be helpful, concise, and accurate."
                  :workspace      (agent-workspace agent)
                  :system-prompt  (agent-system-prompt agent)
                  :client         (agent-client agent)
-                 :tool-registry  tool-registry))
+                 :tool-registry  tool-registry
+                 :workspace-injected-context (agent-workspace-injected-context agent)
+                 :workspace-injected-at (agent-workspace-injected-at agent)))
