@@ -52,7 +52,7 @@ This installs Quicklisp to `~/quicklisp/` and adds it to `~/.sbclrc`.
 
 ```bash
 cd ~/projects
-git clone https://github.com/chrysolambda-ops/clambda.git
+git clone https://github.com/chrysolambda-ops/clawmacs.git
 cd clawmacs
 ```
 

@@ -1,0 +1,18 @@
+[Unit]
+Description=Clawmacs daemon
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=slime
+WorkingDirectory=%h/.clawmacs
+ExecStart=/home/slime/.openclaw/workspace-gensym/clawmacs start
+Environment="LD_LIBRARY_PATH=/usr/lib/x86_64-linux-gnu:%h/.guix-profile/lib"
+Restart=on-failure
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=default.target

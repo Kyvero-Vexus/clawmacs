@@ -63,4 +63,4 @@ Clawmacs is free software: you can redistribute it and/or modify it under the te
 of the GNU General Public License as published by the Free Software Foundation,
 version 3 or any later version.
 
-Source: [chrysolambda-ops/clambda](https://github.com/chrysolambda-ops/clambda)
+Source: [chrysolambda-ops/clawmacs](https://github.com/chrysolambda-ops/clawmacs)

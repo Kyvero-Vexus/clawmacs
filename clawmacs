@@ -1,3 +1,94 @@
 #!/usr/bin/env bash
-# Compatibility launcher; same behavior as ./clambda after rename.
-exec "$(dirname "$0")/clambda" "$@"
+set -euo pipefail
+
+COMMAND="${1:-start}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+STATE_DIR="${HOME}/.clawmacs"
+PID_FILE="${STATE_DIR}/clawmacs.pid"
+
+export LD_LIBRARY_PATH="/usr/lib/x86_64-linux-gnu:${HOME}/.guix-profile/lib"
+
+if ! command -v sbcl >/dev/null 2>&1; then
+  echo "clawmacs: sbcl not found in PATH" >&2
+  exit 1
+fi
+
+if [[ -f "${HOME}/.quicklisp/setup.lisp" ]]; then
+  QUICKLISP_SETUP="${HOME}/.quicklisp/setup.lisp"
+elif [[ -f "${HOME}/quicklisp/setup.lisp" ]]; then
+  QUICKLISP_SETUP="${HOME}/quicklisp/setup.lisp"
+else
+  echo "clawmacs: Quicklisp not found at ~/.quicklisp/setup.lisp or ~/quicklisp/setup.lisp" >&2
+  exit 1
+fi
+
+mkdir -p "${STATE_DIR}"
+
+ASDF_BOOTSTRAP="(progn
+  (pushnew #P\"${SCRIPT_DIR}/projects/clambda-core/\" asdf:*central-registry* :test #'equal)
+  (pushnew #P\"${SCRIPT_DIR}/projects/cl-llm/\" asdf:*central-registry* :test #'equal)
+  (pushnew #P\"${SCRIPT_DIR}/projects/cl-tui/\" asdf:*central-registry* :test #'equal))"
+
+run_sbcl_start() {
+  sbcl --load "${QUICKLISP_SETUP}" \
+       --eval "${ASDF_BOOTSTRAP}" \
+       --eval '(asdf:load-system :clawmacs-core)' \
+       --eval '(asdf:load-system :cl-tui)' \
+       --eval '(ignore-errors (clawmacs/config:load-user-config))' \
+       --eval '(let ((model (or (and (boundp (quote clawmacs:*default-model*)) clawmacs:*default-model*) "google/gemma-3-4b"))) (cl-tui:run :model model))'
+}
+
+start_daemon() {
+  if [[ -f "${PID_FILE}" ]]; then
+    local existing_pid="$(cat "${PID_FILE}" 2>/dev/null || true)"
+    if [[ -n "${existing_pid}" ]] && kill -0 "${existing_pid}" >/dev/null 2>&1; then
+      echo "clawmacs: already running with pid ${existing_pid}" >&2
+      exit 1
+    fi
+    rm -f "${PID_FILE}"
+  fi
+
+  run_sbcl_start &
+  local child_pid=$!
+  echo "${child_pid}" > "${PID_FILE}"
+
+  shutdown() {
+    if kill -0 "${child_pid}" >/dev/null 2>&1; then
+      kill -TERM "${child_pid}" >/dev/null 2>&1 || true
+      wait "${child_pid}" || true
+    fi
+    rm -f "${PID_FILE}"
+  }
+
+  trap shutdown SIGTERM SIGINT
+
+  wait "${child_pid}"
+  local status=$?
+  rm -f "${PID_FILE}"
+  return "${status}"
+}
+
+case "${COMMAND}" in
+  start)
+    start_daemon
+    ;;
+
+  repl)
+    exec sbcl --load "${QUICKLISP_SETUP}" \
+      --eval "${ASDF_BOOTSTRAP}" \
+      --eval '(asdf:load-system :clawmacs-core)' \
+      --eval '(ignore-errors (clawmacs/config:load-user-config))'
+    ;;
+
+  test)
+    exec sbcl --load "${QUICKLISP_SETUP}" \
+      --eval "${ASDF_BOOTSTRAP}" \
+      --eval '(asdf:test-system :clawmacs-core/tests)' \
+      --quit
+    ;;
+
+  *)
+    echo "Usage: $0 [start|repl|test]" >&2
+    exit 2
+    ;;
+esac

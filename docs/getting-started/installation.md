@@ -109,7 +109,7 @@ sbcl --eval '(ql:system-apropos "dexador")' --quit
 
 ```bash
 cd ~/projects          # or wherever you keep code
-git clone https://github.com/chrysolambda-ops/clambda.git
+git clone https://github.com/chrysolambda-ops/clawmacs.git
 ```
 
 This gives you four projects under `clawmacs/projects/`:
