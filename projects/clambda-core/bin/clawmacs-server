@@ -58,7 +58,7 @@ fi
 exec sbcl --noinform --disable-debugger \
   --eval '(require :asdf)' \
   --eval "(asdf:load-system \"clawmacs-core\")" \
-  --eval "(clawmacs/config:load-init)" \
+  --eval "(clawmacs/config:load-user-config)" \
   --eval "(clawmacs:start-server :port ${PORT} :address \"${ADDRESS}\")" \
   --eval "${SWANK_FORM:-nil}" \
   --eval "${CHANNELS_FORM:-nil}" \

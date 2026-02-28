@@ -43,6 +43,6 @@ export CL_SOURCE_REGISTRY="${SCRIPT_DIR}//:${SCRIPT_DIR}/../cl-llm//:${SCRIPT_DI
 exec sbcl --noinform --disable-debugger \
   --eval '(require :asdf)' \
   --eval '(asdf:load-system "clawmacs-gui")' \
-  --eval "(clawmacs/config:load-init)" \
+  --eval "(clawmacs/config:load-user-config)" \
   --eval "(clawmacs-gui:run-gui :model \"${MODEL}\" :name \"${AGENT_NAME}\" :role \"${AGENT_ROLE}\")" \
   --eval '(sb-ext:exit :code 0)'
