@@ -9,6 +9,7 @@
 ## Index
 
 | # | Date | Category | Summary |
+| 33 | 2026-02-28 | protocol/multimodal | `cl-llm/protocol:message` content slot accepts only LIST or STRING; passing a VECTOR for multimodal parts caused a TYPE-ERROR |
 | 32 | 2026-02-27 | prompt/tool-calling | Small local model often narrates tool use instead of emitting tool calls without an explicit system-level tool policy |
 | 31 | 2026-02-27 | api/compat | `schedule-task` only accepted `:every`+`:function`; compatibility call form with `:after` and trailing function failed with `odd number of &KEY arguments` |
 | 30 | 2026-02-27 | packages | `memory-search` exported from `clawmacs/memory` but not re-exported by top-level `clawmacs` |
@@ -385,3 +386,12 @@ design struct slot names and public API names independently; use `:conc-name` to
 **Fix:** Added a structured tool-use policy hint to the injected system message when tools are available, and made request payload explicit with `"tool_choice": "auto"` when tools are sent.
 **Lesson:** Smaller models need direct behavioral constraints in the system prompt for function-calling reliability; also make tool-calling request fields explicit in API payloads.
 **Tags:** #prompting #tool-calling #llm #reliability
+
+## Category: protocol/multimodal
+
+### #33 — 2026-02-28
+**What:** `image_analyze` passed multimodal `content` as a vector (`#(...)`) to `cl-llm:user-message`, which signalled a type error: content slot expected `(OR LIST STRING)`.
+**Why:** `cl-llm/protocol:message` struct is typed as `(or null string list)` for `content`; vectors are rejected by the slot type.
+**Fix:** Build multimodal content as a list of part hash-tables instead of a vector.
+**Lesson:** When using `cl-llm` multimodal content, pass parts as a LIST. JSON encoding still produces an array, while satisfying the protocol slot type.
+**Tags:** #cl-llm #multimodal #types #vision
