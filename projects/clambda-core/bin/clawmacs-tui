@@ -10,7 +10,7 @@
 
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+SCRIPT_DIR="$(cd "$(dirname "$(readlink -f "$0")")/.." && pwd)"
 BASE_URL="${CLAWMACS_LLM_BASE_URL:-http://192.168.1.189:1234/v1}"
 API_KEY="${CLAWMACS_LLM_API_KEY:-lm-studio}"
 MODEL="${CLAWMACS_MODEL:-google/gemma-3-4b}"

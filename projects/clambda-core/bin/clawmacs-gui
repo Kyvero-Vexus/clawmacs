@@ -11,7 +11,7 @@
 
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+SCRIPT_DIR="$(cd "$(dirname "$(readlink -f "$0")")/.." && pwd)"
 MODEL="${CLAWMACS_MODEL:-google/gemma-3-4b}"
 AGENT_NAME="${CLAWMACS_AGENT_NAME:-clawmacs}"
 AGENT_ROLE="${CLAWMACS_AGENT_ROLE:-assistant}"

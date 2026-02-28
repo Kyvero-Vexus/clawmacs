@@ -10,7 +10,7 @@
 
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+SCRIPT_DIR="$(cd "$(dirname "$(readlink -f "$0")")/.." && pwd)"
 PORT="${CLAWMACS_PORT:-18800}"
 SWANK_PORT="${CLAWMACS_SWANK_PORT:-4005}"
 ADDRESS="${CLAWMACS_ADDRESS:-127.0.0.1}"
