@@ -813,14 +813,17 @@
    ;; Session
    #:session #:make-session
    #:session-id #:session-agent #:session-messages
+   #:session-metadata #:session-created-at
    #:session-add-message #:session-clear-messages
-   #:session-message-count #:session-total-tokens
+   #:session-message-count #:session-last-message
+   #:session-total-tokens
    #:save-session #:load-session
    ;; Tools
    #:tool-registry #:make-tool-registry
    #:register-tool! #:find-tool #:list-tools
    #:define-tool #:dispatch-tool-call
    #:tool-definitions-for-llm
+   #:schema-plist->ht
    #:copy-tools-to-registry
    #:tool-result #:tool-result-ok #:tool-result-error
    #:tool-result-value #:format-tool-result
@@ -997,7 +1000,8 @@
                 #:agent-name #:agent-system-prompt
                 #:agent-client #:agent-tool-registry)
   (:import-from #:clawmacs/session
-                #:session #:make-session)
+                #:session #:make-session
+                #:save-session #:load-session)
   (:import-from #:clawmacs/registry
                 #:define-agent #:register-agent #:find-agent
                 #:unregister-agent #:send-to-agent #:consume-agent-messages
@@ -1069,6 +1073,7 @@
    #:agent-name #:agent-system-prompt
    #:agent-client #:agent-tool-registry
    #:session #:make-session
+   #:save-session #:load-session
    #:define-agent #:register-agent #:find-agent
    #:unregister-agent #:send-to-agent #:consume-agent-messages
    #:agent-spec-p
