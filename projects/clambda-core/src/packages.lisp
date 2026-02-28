@@ -61,7 +61,10 @@
    #:agent-tool-registry
    ;; Operations
    #:agent-effective-system-prompt
-   #:agent-with-tools))
+   #:agent-with-tools
+   #:agent-refresh-workspace-context!
+   #:agent-workspace-injected-context
+   #:agent-workspace-injected-at))
 
 ;;; ── Session ──────────────────────────────────────────────────────────────────
 
@@ -638,6 +641,32 @@
 ;;; Restore it instantly — zero dependency resolution, all config baked in.
 ;;; Genera-style: (save-clawmacs-image) → (./clawmacs-image)
 
+(defpackage #:clawmacs/bootstrap
+  (:use #:cl)
+  (:import-from #:clawmacs/agent
+                #:agent #:agent-name #:agent-role #:agent-workspace
+                #:agent-system-prompt #:agent-refresh-workspace-context!)
+  (:import-from #:clawmacs/registry
+                #:find-agent #:list-agents #:instantiate-agent-spec
+                #:agent-spec-name)
+  (:export
+   ;; Template registry
+   #:*bootstrap-templates*
+   #:register-template #:find-template #:list-templates
+   ;; Workspace scaffolding
+   #:bootstrap-agent-workspace
+   ;; First-run detection
+   #:agent-needs-bootstrap-p
+   #:agent-workspace-exists-p
+   #:complete-bootstrap!
+   ;; System prompt injection
+   #:bootstrap-system-prompt-prefix
+   ;; High-level startup
+   #:ensure-agent-ready
+   ;; Convenience
+   #:bootstrap-registered-agent
+   #:bootstrap-all-agents))
+
 (defpackage #:clawmacs/image
   (:use #:cl)
   (:export
@@ -824,6 +853,16 @@
   (:import-from #:clawmacs/swank
                 #:*swank-port*
                 #:start-swank #:stop-swank #:swank-running-p)
+  ;; Bootstrap / workspace scaffolding
+  (:import-from #:clawmacs/bootstrap
+                #:*bootstrap-templates*
+                #:register-template #:find-template #:list-templates
+                #:bootstrap-agent-workspace
+                #:agent-needs-bootstrap-p #:agent-workspace-exists-p
+                #:complete-bootstrap!
+                #:bootstrap-system-prompt-prefix
+                #:ensure-agent-ready
+                #:bootstrap-registered-agent #:bootstrap-all-agents)
   ;; Lisp Superpowers: Image save/restore
   (:import-from #:clawmacs/image
                 #:clawmacs-main #:save-clawmacs-image)
@@ -1006,7 +1045,16 @@
    #:*swank-port*
    #:start-swank #:stop-swank #:swank-running-p
    ;; Lisp Superpowers: Image save/restore (P1)
-   #:clawmacs-main #:save-clawmacs-image))
+   #:clawmacs-main #:save-clawmacs-image
+   ;; Bootstrap / workspace scaffolding
+   #:*bootstrap-templates*
+   #:register-template #:find-template #:list-templates
+   #:bootstrap-agent-workspace
+   #:agent-needs-bootstrap-p #:agent-workspace-exists-p
+   #:complete-bootstrap!
+   #:bootstrap-system-prompt-prefix
+   #:ensure-agent-ready
+   #:bootstrap-registered-agent #:bootstrap-all-agents))
 
 ;;; ── User init package (for init.lisp) ────────────────────────────────────────
 ;;;
@@ -1090,6 +1138,12 @@
   ;; Lisp Superpowers — available from init.lisp
   (:import-from #:clawmacs/swank
                 #:*swank-port* #:start-swank #:stop-swank #:swank-running-p)
+  (:import-from #:clawmacs/bootstrap
+                #:bootstrap-agent-workspace
+                #:agent-needs-bootstrap-p #:agent-workspace-exists-p
+                #:complete-bootstrap! #:ensure-agent-ready
+                #:bootstrap-registered-agent #:bootstrap-all-agents
+                #:register-template)
   (:import-from #:clawmacs/image
                 #:clawmacs-main #:save-clawmacs-image)
   (:export
@@ -1160,4 +1214,10 @@
    ;; Lisp Superpowers: SWANK/SLIME server
    #:*swank-port* #:start-swank #:stop-swank #:swank-running-p
    ;; Lisp Superpowers: Image save/restore
-   #:clawmacs-main #:save-clawmacs-image))
+   #:clawmacs-main #:save-clawmacs-image
+   ;; Bootstrap / workspace scaffolding
+   #:bootstrap-agent-workspace
+   #:agent-needs-bootstrap-p #:agent-workspace-exists-p
+   #:complete-bootstrap! #:ensure-agent-ready
+   #:bootstrap-registered-agent #:bootstrap-all-agents
+   #:register-template))

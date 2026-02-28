@@ -60,6 +60,7 @@
                ;; Layer 9 (P0): SWANK/SLIME server for live inspection + hot-reload
                (:file "src/swank")
                ;; Layer 9 (P1): Image save/restore (Genera-style)
+               (:file "src/bootstrap")
                (:file "src/image"))
   :in-order-to ((test-op (test-op "clawmacs-core/tests"))))
 
