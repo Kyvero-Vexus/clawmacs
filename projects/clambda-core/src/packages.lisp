@@ -690,6 +690,19 @@
                 #:workspace-memory-path
                 #:load-workspace-memory #:search-memory #:memory-search
                 #:memory-context-string)
+  (:import-from #:clawmacs/config
+                #:*clawmacs-home* #:load-user-config #:user-config-loaded-p
+                #:defoption #:*option-registry* #:describe-options
+                #:add-hook #:remove-hook #:run-hook #:run-hook-with-args
+                #:*after-init-hook* #:*before-agent-turn-hook*
+                #:*after-tool-call-hook* #:*channel-message-hook*
+                #:register-channel #:*registered-channels*
+                #:define-user-tool #:merge-user-tools! #:*user-tool-registry*
+                #:*default-model* #:*default-max-turns* #:*default-stream*
+                #:*default-context-window* #:*context-compaction-keep-last-messages*
+                #:*log-level* #:*startup-message* #:*fallback-models*
+                #:*heartbeat-interval* #:*workspace-inject-files*
+                #:*workspace-inject-refresh-interval* #:*model-supports-vision*)
   (:import-from #:clawmacs/conditions
                 #:clawmacs-error #:agent-error #:session-error
                 #:tool-not-found #:tool-execution-error
@@ -848,6 +861,19 @@
    #:workspace-memory-path
    #:load-workspace-memory #:search-memory #:memory-search
    #:memory-context-string
+   ;; Config
+   #:*clawmacs-home* #:load-user-config #:user-config-loaded-p
+   #:defoption #:*option-registry* #:describe-options
+   #:add-hook #:remove-hook #:run-hook #:run-hook-with-args
+   #:*after-init-hook* #:*before-agent-turn-hook*
+   #:*after-tool-call-hook* #:*channel-message-hook*
+   #:register-channel #:*registered-channels*
+   #:define-user-tool #:merge-user-tools! #:*user-tool-registry*
+   #:*default-model* #:*default-max-turns* #:*default-stream*
+   #:*default-context-window* #:*context-compaction-keep-last-messages*
+   #:*log-level* #:*startup-message* #:*fallback-models*
+   #:*heartbeat-interval* #:*workspace-inject-files*
+   #:*workspace-inject-refresh-interval* #:*model-supports-vision*
    ;; Conditions
    #:clawmacs-error #:agent-error #:session-error
    #:tool-not-found
