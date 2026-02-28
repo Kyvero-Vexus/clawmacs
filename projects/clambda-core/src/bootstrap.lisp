@@ -284,8 +284,53 @@ _Created on first bootstrap. Start filling this in as you go._
     (declare (ignore agent))
     "# HEARTBEAT.md
 
-# Keep this file empty (or with only comments) to skip heartbeat work.
+# Keep this file empty (or with only comments) to skip heartbeat API calls.
 # Add tasks below when you want the agent to check something periodically.
+
+# ─── How Heartbeats Work ───
+#
+# The Clawmacs heartbeat system polls this file at a configurable interval
+# (default: every 30 minutes). Each heartbeat:
+#
+#   1. Reads this file
+#   2. Sends it as a prompt to your agent
+#   3. If the agent replies HEARTBEAT_OK → nothing happens (all clear)
+#   4. If the agent replies with actual content → it's delivered to your channel
+#
+# ─── When to Reply HEARTBEAT_OK ───
+#
+#   - Late night (23:00–08:00) unless something is urgent
+#   - Nothing new since the last check
+#   - Human is clearly busy
+#   - You just checked < 30 minutes ago
+#
+# ─── When to Actually Reply ───
+#
+#   - Important email arrived
+#   - Calendar event coming up (< 2h)
+#   - Something interesting you found
+#   - A background task finished
+#   - It's been > 8h since you said anything
+#
+# ─── State Tracking ───
+#
+# Track your checks in memory/heartbeat-state.json (auto-managed).
+# You can also write your own state there from tool calls.
+#
+# ─── Example Tasks ───
+#
+# Uncomment and customize:
+#
+# ## Periodic Checks (rotate through these, 2-4 times per day)
+# - Check for urgent unread emails
+# - Review upcoming calendar events (next 24-48h)
+# - Check project git status
+# - Review and update MEMORY.md with recent learnings
+#
+# ## Proactive Work (do without asking)
+# - Organize memory files
+# - Update documentation
+# - Commit and push changes
 "))
 
 ;;;; ═══════════════════════════════════════════════════════════════════════════

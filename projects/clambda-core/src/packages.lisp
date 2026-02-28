@@ -265,6 +265,16 @@
    #:agent-spec-workspace
    #:agent-spec-max-turns             ; new: per-agent turn limit
    #:agent-spec-client
+   ;; Heartbeat per-agent config
+   #:agent-spec-heartbeat-interval
+   #:agent-spec-heartbeat-prompt
+   #:agent-spec-heartbeat-quiet-start
+   #:agent-spec-heartbeat-quiet-end
+   #:agent-spec-heartbeat-channel
+   #:agent-spec-heartbeat-target
+   ;; Heartbeat system
+   #:*default-heartbeat-prompt*
+   #:*heartbeat-callback*
    ;; Instantiation
    #:instantiate-agent-spec))
 

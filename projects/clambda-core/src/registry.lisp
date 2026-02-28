@@ -21,7 +21,14 @@ Can be registered by name and later instantiated into an AGENT."
   (system-prompt nil :type (or null string))
   (tools         nil :type list)         ; list of tool name strings
   (max-turns     nil :type (or null integer)) ; override *default-max-turns*
-  (client        nil))                   ; a CL-LLM:CLIENT, or NIL
+  (client        nil)                    ; a CL-LLM:CLIENT, or NIL
+  ;; Heartbeat configuration (per-agent override of global *heartbeat-interval*)
+  (heartbeat-interval nil :type (or null integer))  ; seconds; NIL = use global
+  (heartbeat-prompt   nil :type (or null string))   ; custom prompt; NIL = default
+  (heartbeat-quiet-start nil :type (or null integer)) ; hour 0-23; NIL = no quiet hours
+  (heartbeat-quiet-end   nil :type (or null integer)) ; hour 0-23
+  (heartbeat-channel     nil :type (or null keyword)) ; :telegram, :irc, or NIL
+  (heartbeat-target      nil :type (or null string))) ; channel target (chat-id, channel name)
 
 (defmethod print-object ((spec agent-spec) stream)
   (print-unreadable-object (spec stream :type t)
@@ -69,36 +76,186 @@ Use REGISTER-AGENT / FIND-AGENT / LIST-AGENTS to access it.")
       (prog1 (copy-list (gethash key *agent-message-queues*))
         (setf (gethash key *agent-message-queues*) nil)))))
 
+;;; ── Heartbeat System ──────────────────────────────────────────────────────────
+;;;
+;;; OpenClaw-parity heartbeat with:
+;;;   - Per-agent intervals and prompts
+;;;   - HEARTBEAT_OK detection (suppress empty replies)
+;;;   - Quiet hours (skip heartbeats during sleep time)
+;;;   - State tracking (heartbeat-state.json in workspace)
+;;;   - Channel delivery (send non-trivial replies to Telegram/IRC)
+;;;   - Default prompt reads HEARTBEAT.md + workspace context
+
+(defvar *default-heartbeat-prompt*
+  "Read HEARTBEAT.md if it exists (workspace context). Follow it strictly.
+Do not infer or repeat old tasks from prior chats.
+If nothing needs attention, reply HEARTBEAT_OK."
+  "Default heartbeat prompt used when agent-spec has no custom prompt.")
+
+(defvar *heartbeat-callback* nil
+  "Optional (lambda (agent-name reply channel target)) called for non-trivial heartbeat replies.
+Set this to integrate with channel delivery. If NIL, replies are logged only.")
+
 (defun %heartbeat-task-name (name)
   (format nil "heartbeat:~a" (normalize-name name)))
 
+(defun %current-hour ()
+  "Return current hour (0-23) in local time."
+  (nth-value 2 (decode-universal-time (get-universal-time))))
+
+(defun %in-quiet-hours-p (spec)
+  "Return T if current time is within SPEC's quiet hours."
+  (let ((start (agent-spec-heartbeat-quiet-start spec))
+        (end   (agent-spec-heartbeat-quiet-end spec)))
+    (when (and start end)
+      (let ((hour (%current-hour)))
+        (if (<= start end)
+            ;; Normal range: e.g. 23-8 wraps, 9-17 doesn't
+            ;; Wait, start <= end means no wrap: e.g. start=9 end=17
+            (and (>= hour start) (< hour end))
+            ;; Wrapped: e.g. start=23 end=8 means 23,0,1,...,7
+            (or (>= hour start) (< hour end)))))))
+
+(defun %heartbeat-state-path (workspace)
+  "Return path to heartbeat-state.json in WORKSPACE."
+  (merge-pathnames "memory/heartbeat-state.json" workspace))
+
+(defun %load-heartbeat-state (workspace)
+  "Load heartbeat state from workspace, or return empty alist."
+  (let ((path (%heartbeat-state-path workspace)))
+    (if (probe-file path)
+        (handler-case
+            (com.inuoe.jzon:parse (uiop:read-file-string path) :key-fn #'identity)
+          (error () (make-hash-table :test 'equal)))
+        (make-hash-table :test 'equal))))
+
+(defun %save-heartbeat-state (workspace state)
+  "Save heartbeat STATE hash-table to workspace."
+  (let ((path (%heartbeat-state-path workspace)))
+    (ensure-directories-exist path)
+    (with-open-file (out path :direction :output
+                              :if-exists :supersede
+                              :external-format :utf-8)
+      (com.inuoe.jzon:stringify state :stream out :pretty t))))
+
+(defun %heartbeat-ok-p (reply)
+  "Return T if REPLY is a heartbeat-ok acknowledgment (nothing to report)."
+  (when (stringp reply)
+    (let ((trimmed (string-trim '(#\Space #\Tab #\Newline #\Return) reply)))
+      (or (string= trimmed "HEARTBEAT_OK")
+          (string= trimmed "heartbeat_ok")
+          (string= trimmed "Heartbeat_OK")
+          ;; Also catch "HEARTBEAT_OK" embedded at start/end
+          (and (>= (length trimmed) 12)
+               (or (search "HEARTBEAT_OK" trimmed)
+                   (search "heartbeat_ok" trimmed)))))))
+
+(defun %build-heartbeat-prompt (spec workspace)
+  "Build the full heartbeat prompt for SPEC, incorporating HEARTBEAT.md if present."
+  (let* ((custom-prompt (agent-spec-heartbeat-prompt spec))
+         (base-prompt   (or custom-prompt *default-heartbeat-prompt*))
+         (heartbeat-file (and workspace (merge-pathnames "HEARTBEAT.md" workspace)))
+         (heartbeat-content (when (and heartbeat-file (probe-file heartbeat-file))
+                              (string-trim '(#\Space #\Tab #\Newline #\Return)
+                                           (uiop:read-file-string heartbeat-file)))))
+    ;; If there's a custom prompt, use it directly
+    (if custom-prompt
+        custom-prompt
+        ;; Otherwise build the default: prompt + HEARTBEAT.md contents
+        (if (and heartbeat-content (> (length heartbeat-content) 0)
+                 ;; Skip if HEARTBEAT.md is only comments
+                 (not (every (lambda (line)
+                               (let ((trimmed (string-trim '(#\Space #\Tab) line)))
+                                 (or (= (length trimmed) 0)
+                                     (char= (char trimmed 0) #\#))))
+                             (uiop:split-string heartbeat-content :separator '(#\Newline)))))
+            (format nil "~a~%~%--- HEARTBEAT.md contents ---~%~a" base-prompt heartbeat-content)
+            ;; HEARTBEAT.md is empty/comments-only: nothing to do
+            nil))))
+
 (defun %heartbeat-body (name)
+  "Execute one heartbeat cycle for agent NAME."
   (handler-case
       (let* ((spec (find-agent name))
              (agent (and spec (car (multiple-value-list (instantiate-agent-spec spec)))))
-             (workspace (and agent (clawmacs/agent::agent-workspace agent)))
-             (heartbeat-file (and workspace (merge-pathnames "HEARTBEAT.md" workspace))))
-        (when (and heartbeat-file (probe-file heartbeat-file))
-          (let ((prompt (string-trim '(#\Space #\Tab #\Newline #\Return)
-                                     (uiop:read-file-string heartbeat-file))))
-            (when (> (length prompt) 0)
-              (let* ((session (clawmacs/session:make-session :agent agent))
-                     (reply (clawmacs/loop:run-agent session prompt
-                                                     :options (clawmacs/loop:make-loop-options
-                                                               :max-turns (or (agent-spec-max-turns spec)
-                                                                              clawmacs/config:*default-max-turns*)))))
-                (declare (ignore reply)))))))
+             (workspace (and agent (clawmacs/agent::agent-workspace agent))))
+        (when (and spec agent)
+          ;; Check quiet hours
+          (when (%in-quiet-hours-p spec)
+            (format t "~&[heartbeat:~a] Skipping — quiet hours~%" name)
+            (return-from %heartbeat-body nil))
+
+          ;; Build prompt
+          (let ((prompt (%build-heartbeat-prompt spec workspace)))
+            (unless prompt
+              ;; No HEARTBEAT.md content and no custom prompt → skip
+              (return-from %heartbeat-body nil))
+
+            ;; Ensure workspace context is fresh
+            (when (boundp 'clawmacs/bootstrap::ensure-agent-ready)
+              (handler-case
+                  (clawmacs/bootstrap:ensure-agent-ready agent :auto-bootstrap nil)
+                (error () nil)))
+
+            ;; Run the agent
+            (let* ((session (clawmacs/session:make-session :agent agent))
+                   (reply (clawmacs/loop:run-agent session prompt
+                                                   :options (clawmacs/loop:make-loop-options
+                                                             :max-turns (or (agent-spec-max-turns spec)
+                                                                            clawmacs/config:*default-max-turns*)))))
+              ;; Update heartbeat state
+              (when workspace
+                (handler-case
+                    (let ((state (%load-heartbeat-state workspace)))
+                      (setf (gethash "lastHeartbeat" state) (get-universal-time))
+                      (setf (gethash "lastReply" state)
+                            (if (%heartbeat-ok-p reply) "ok" "active"))
+                      (%save-heartbeat-state workspace state))
+                  (error () nil)))
+
+              ;; Process reply
+              (cond
+                ;; HEARTBEAT_OK → nothing to do, agent says all clear
+                ((%heartbeat-ok-p reply)
+                 (format t "~&[heartbeat:~a] OK — nothing to report~%" name))
+
+                ;; Non-trivial reply → deliver via callback or log
+                ((and reply (> (length (string-trim '(#\Space #\Tab #\Newline #\Return)
+                                                    reply)) 0))
+                 (format t "~&[heartbeat:~a] Active reply (~d chars)~%"
+                         name (length reply))
+                 ;; Deliver via callback if set
+                 (when *heartbeat-callback*
+                   (handler-case
+                       (funcall *heartbeat-callback*
+                                name reply
+                                (agent-spec-heartbeat-channel spec)
+                                (agent-spec-heartbeat-target spec))
+                     (error (e)
+                       (warn "heartbeat callback for ~a failed: ~a" name e)))))
+
+                ;; Empty/nil reply
+                (t
+                 (format t "~&[heartbeat:~a] Empty reply~%" name)))))))
     (error (e)
       (warn "heartbeat for ~a failed: ~a" name e))))
 
+(defun %heartbeat-interval-for (spec)
+  "Return the effective heartbeat interval for SPEC in seconds."
+  (or (agent-spec-heartbeat-interval spec)
+      (and (boundp 'clawmacs/config::*heartbeat-interval*)
+           clawmacs/config::*heartbeat-interval*)
+      nil))
+
 (defun %maybe-enable-heartbeat (name)
-  (when (and (boundp 'clawmacs/config::*heartbeat-interval*)
-             clawmacs/config::*heartbeat-interval*
-             (> clawmacs/config::*heartbeat-interval* 0))
-    (clawmacs/cron:schedule-task (%heartbeat-task-name name)
-                                 :every clawmacs/config::*heartbeat-interval*
-                                 :description (format nil "Heartbeat for agent ~a" name)
-                                 :function (lambda () (%heartbeat-body name)))))
+  "Schedule a heartbeat cron task for agent NAME if an interval is configured."
+  (let* ((spec (find-agent name))
+         (interval (and spec (%heartbeat-interval-for spec))))
+    (when (and interval (> interval 0))
+      (clawmacs/cron:schedule-task (%heartbeat-task-name name)
+                                   :every interval
+                                   :description (format nil "Heartbeat for agent ~a (every ~ds)" name interval)
+                                   :function (lambda () (%heartbeat-body name))))))
 
 (defun register-agent (name spec)
   "Register SPEC (an AGENT-SPEC or an AGENT) under NAME in *AGENT-REGISTRY*.
@@ -203,7 +360,10 @@ Accepts symbols, keywords, or strings."
 
 (defmacro define-agent (name &key (role "assistant") display-name emoji theme
                                    model workspace system-prompt
-                                   tools max-turns client)
+                                   tools max-turns client
+                                   heartbeat-interval heartbeat-prompt
+                                   heartbeat-quiet-start heartbeat-quiet-end
+                                   heartbeat-channel heartbeat-target)
   "High-level DSL for defining and registering an agent spec.
 
 Idiomatic usage from init.lisp:
@@ -227,6 +387,11 @@ NAME — a symbol, keyword, or string. Symbol names are lowercased.
          Tools are looked up in the built-in registry at instantiation time.
 :MAX-TURNS — maximum turns for this agent's loop (overrides *default-max-turns*).
 :CLIENT — a CL-LLM:CLIENT instance, or NIL.
+:HEARTBEAT-INTERVAL — seconds between heartbeats (overrides global *heartbeat-interval*).
+:HEARTBEAT-PROMPT — custom heartbeat prompt (default reads HEARTBEAT.md).
+:HEARTBEAT-QUIET-START / :HEARTBEAT-QUIET-END — hour range (0-23) to skip heartbeats.
+:HEARTBEAT-CHANNEL — :telegram or :irc for reply delivery.
+:HEARTBEAT-TARGET — channel target (chat-id, channel name).
 
 Registers the spec in *AGENT-REGISTRY*. To create a live agent, call
 INSTANTIATE-AGENT-SPEC on the registered spec.
@@ -258,6 +423,12 @@ This macro expands to: spec creation + tool name encoding + registry registratio
                   :system-prompt ,system-prompt
                   :tools         ,tools-form
                   :max-turns     ,max-turns
-                  :client        ,client)))
+                  :client        ,client
+                  :heartbeat-interval    ,heartbeat-interval
+                  :heartbeat-prompt      ,heartbeat-prompt
+                  :heartbeat-quiet-start ,heartbeat-quiet-start
+                  :heartbeat-quiet-end   ,heartbeat-quiet-end
+                  :heartbeat-channel     ,heartbeat-channel
+                  :heartbeat-target      ,heartbeat-target)))
        (register-agent ,name-form spec)
        spec)))
