@@ -7,7 +7,7 @@
 | IRC (TLS, NickServ, flood) | ✅ | ✅ | ✅ Parity |
 | Tools: exec, read, write, list_dir | ✅ | ✅ | ✅ Parity |
 | Tools: web_fetch, tts, browser | ✅ | ✅ | ✅ Parity |
-| Memory search | ✅ (vector) | ✅ (keyword) | ⚠️ Functional (no embeddings yet) |
+| Memory search | ✅ (vector) | ✅ (vector) | ✅ Parity (nomic-embed cosine similarity) |
 | Session persistence | ✅ | ✅ | ✅ Parity |
 | Sub-agents | ✅ | ✅ | ✅ Parity |
 | Cron / scheduled tasks | ✅ | ✅ | ✅ Parity |
@@ -18,7 +18,7 @@
 | Workspace file injection | ✅ | ✅ | ✅ Parity |
 | Cross-session messaging | ✅ | ✅ | ✅ Parity |
 | Agent identity | ✅ | ✅ | ✅ Parity |
-| Image analysis | ✅ | ⚠️ stub | ⚠️ Interface only |
+| Image analysis | ✅ | ✅ | ✅ Parity (multimodal vision API) |
 | Emacs-style config | ❌ (JSON) | ✅ (init.lisp) | ✅ Better |
 | Condition system | ❌ | ✅ | ✅ Better |
 | SWANK/SLIME | ❌ | ✅ | ✅ Better |
