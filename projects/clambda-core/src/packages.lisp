@@ -459,6 +459,9 @@
    #:*default-max-turns*
    #:*default-context-window*
    #:*context-compaction-keep-last-messages*
+   #:*compaction-enabled*
+   #:*compaction-threshold*
+   #:*compaction-keep-recent*
    #:*default-stream*
    #:*log-level*
    #:*startup-message*
@@ -1100,6 +1103,7 @@
                 #:merge-user-tools! #:*user-tool-registry*
                 #:*default-model* #:*default-max-turns*
                 #:*default-context-window* #:*context-compaction-keep-last-messages*
+                #:*compaction-enabled* #:*compaction-threshold* #:*compaction-keep-recent*
                 #:*default-stream* #:*log-level* #:*startup-message*
                 #:*workspace-inject-files*
                 #:*workspace-inject-refresh-interval*

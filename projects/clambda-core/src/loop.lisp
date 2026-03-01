@@ -139,15 +139,28 @@ The LLM is asked to return pure JSON. If parsing fails, returns NIL."
                  :model model)))
 
 (defun %maybe-compact-session-context (session)
+  ;; Respect *compaction-enabled* flag
+  (let ((enabled (if (boundp 'clawmacs/config::*compaction-enabled*)
+                     clawmacs/config::*compaction-enabled*
+                     t)))
+    (unless enabled
+      (return-from %maybe-compact-session-context session)))
   (let* ((agent (session-agent session))
          (messages (clawmacs/session:session-messages session))
          (window (or (and (boundp 'clawmacs/config::*default-context-window*)
                           clawmacs/config::*default-context-window*)
                      32768))
-         (threshold (floor (* window 0.85)))
-         (keep-last (or (and (boundp 'clawmacs/config::*context-compaction-keep-last-messages*)
+         (threshold-frac (or (and (boundp 'clawmacs/config::*compaction-threshold*)
+                                  clawmacs/config::*compaction-threshold*)
+                             0.75))
+         (threshold (floor (* window threshold-frac)))
+         ;; Prefer *compaction-keep-recent* (in message pairs = *2), fall back to keep-last-messages
+         (keep-recent-pairs (and (boundp 'clawmacs/config::*compaction-keep-recent*)
+                                 clawmacs/config::*compaction-keep-recent*))
+         (keep-last (or (and keep-recent-pairs (* 2 keep-recent-pairs))
+                        (and (boundp 'clawmacs/config::*context-compaction-keep-last-messages*)
                              clawmacs/config::*context-compaction-keep-last-messages*)
-                        12))
+                        8))
          (estimate (max (clawmacs/session:session-total-tokens session)
                         (%context-token-estimate messages))))
     (when (and (> estimate threshold)
@@ -155,12 +168,18 @@ The LLM is asked to return pure JSON. If parsing fails, returns NIL."
       (let* ((split (- (length messages) keep-last))
              (older (subseq messages 0 split))
              (recent (subseq messages split))
+             (before-tokens (ceiling estimate 1000))
              (summary (handler-case
                           (%summarize-old-messages
                            (clawmacs/agent:agent-client agent)
                            (clawmacs/agent:agent-model agent)
                            older)
-                        (error () "Conversation summary unavailable; older messages compacted."))))
+                        (error () "Conversation summary unavailable; older messages compacted.")))
+             (summary-tokens (ceiling (%context-token-estimate
+                                       (list (cl-llm/protocol:system-message summary)))
+                                      1000)))
+        (format t "~&[clawmacs/compaction] Compacted ~A messages into summary (was ~~~Ak tokens, now ~~~Ak tokens)~%"
+                (length older) before-tokens summary-tokens)
         (setf (clawmacs/session:session-messages session)
               (cons (cl-llm/protocol:system-message
                      (format nil "Conversation summary:\n~a" summary))
@@ -385,7 +404,12 @@ Used as a fallback for strict prompt templates that reject system/tool roles."
                                      (cl-llm:chat-stream client normalized callback :model m :tools nil)
                                      (cl-llm:chat client normalized :model m :tools nil))))))
                     (t
-                     (error e))))))
+                     ;; Log non-retryable error and try fallback if available
+                     (if (not (equal m (car (last models))))
+                         (format *error-output* "~&[clawmacs/loop] HTTP ~a on model ~a: ~a — trying fallback.~%"
+                                 (cl-llm/conditions:http-error-status e) m
+                                 (cl-llm/conditions:http-error-body e))
+                         (error e)))))))
     ;; Last model attempt without swallowing non-retryable conditions.
     (let ((last-model (or (car (last models)) model)))
       (if stream

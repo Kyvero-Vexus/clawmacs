@@ -111,19 +111,8 @@ BASE-DELAY   — base delay in seconds (default: *RETRY-BASE-DELAY-SECONDS*)."
                           :do (funcall callback line))
                  (close stream))))
          (dexador:http-request-failed (e)
-           (let* ((status (dexador:response-status e))
-                  (raw-body (dexador:response-body e))
-                  (body (etypecase raw-body
-                          (string raw-body)
-                          (stream
-                           (let ((s (make-string-output-stream)))
-                             (ignore-errors
-                               (loop :for line := (read-line raw-body nil nil)
-                                     :while line
-                                     :do (write-line line s)))
-                             (ignore-errors (close raw-body))
-                             (get-output-stream-string s)))
-                          (null ""))))
+           (let ((status (dexador:response-status e))
+                 (body   (dexador:response-body e)))
              (cond
                ((and (transient-status-p status)
                      (< attempt (1+ max-retries)))

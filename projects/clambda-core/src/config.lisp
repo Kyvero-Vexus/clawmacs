@@ -102,6 +102,20 @@ Useful from init.lisp or the REPL to discover what's configurable."
   :type integer
   :doc "Number of most recent messages preserved verbatim during context compaction.")
 
+(defoption *compaction-enabled* t
+  :type boolean
+  :doc "If T, compact conversation history when approaching context window limit.")
+
+(defoption *compaction-threshold* 0.75
+  :type float
+  :doc "Fraction of context window used before compaction is triggered (default 0.75).
+E.g. 0.75 means compact when 75% of the context window is consumed.")
+
+(defoption *compaction-keep-recent* 4
+  :type integer
+  :doc "Number of recent message *pairs* (user+assistant) to always keep verbatim
+during context compaction. Overrides *context-compaction-keep-last-messages* when set.")
+
 (defoption *default-stream* nil
   :type boolean
   :doc "If T, use streaming mode by default for LLM calls.")

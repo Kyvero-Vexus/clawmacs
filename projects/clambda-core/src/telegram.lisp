@@ -397,7 +397,187 @@ Steps:
                                        "Sorry, I couldn't generate a response.")))))))
 
 ;;;; ─────────────────────────────────────────────────────────────────────────────
-;;;; § 8. Update Processing
+;;;; § 8. Slash Command Handling
+;;;; ─────────────────────────────────────────────────────────────────────────────
+
+(defvar *bot-start-time* (get-universal-time)
+  "Universal time when the Telegram bot was started.")
+
+(defun %format-uptime (seconds)
+  "Format SECONDS into a human-readable uptime string."
+  (let* ((days    (floor seconds 86400))
+         (rem1    (mod seconds 86400))
+         (hours   (floor rem1 3600))
+         (rem2    (mod rem1 3600))
+         (minutes (floor rem2 60))
+         (secs    (mod rem2 60)))
+    (if (> days 0)
+        (format nil "~Ad ~Ah ~Am ~As" days hours minutes secs)
+        (format nil "~Ah ~Am ~As" hours minutes secs))))
+
+(defun %session-token-estimate (session)
+  "Estimate total tokens used in SESSION (from tracking + current history)."
+  (let* ((messages (clawmacs/session:session-messages session))
+         (hist-estimate (reduce #'+ messages
+                                :key (lambda (m)
+                                       (max 1 (ceiling (length (or (cl-llm/protocol:message-content m) "")) 4)))
+                                :initial-value 0))
+         (tracked (clawmacs/session:session-total-tokens session)))
+    (max hist-estimate tracked)))
+
+(defun handle-cmd-new (chan chat-id session)
+  "Handle /new or /reset — clear conversation history."
+  (clawmacs/session:session-clear-messages session)
+  (setf (clawmacs/session:session-total-tokens session) 0)
+  (format t "~&[telegram] /new — cleared session for chat ~A~%" chat-id)
+  (telegram-send-message chan chat-id
+   "✅ *New session started.* Conversation history cleared."))
+
+(defun handle-cmd-status (chan chat-id session)
+  "Handle /status — show session info."
+  (let* ((agent   (clawmacs/session:session-agent session))
+         (model   (clawmacs/agent:agent-model agent))
+         (uptime  (%format-uptime (- (get-universal-time) *bot-start-time*)))
+         (msgs    (length (clawmacs/session:session-messages session)))
+         (tokens  (%session-token-estimate session))
+         (window  (if (boundp 'clawmacs/config:*default-context-window*)
+                      clawmacs/config:*default-context-window*
+                      32768))
+         (pct     (if (> window 0)
+                      (floor (* 100 tokens) window)
+                      0)))
+    (telegram-send-message chan chat-id
+     (format nil
+      "📊 *Clawmacs Status*~%~%~
+       Model: `~A`~%~
+       Uptime: ~A~%~
+       Messages in history: ~A~%~
+       Token usage: ~A / ~A (~A%%)~%~
+       Compaction: ~A"
+      model uptime msgs tokens window pct
+      (if (and (boundp 'clawmacs/config:*compaction-enabled*)
+               clawmacs/config:*compaction-enabled*)
+          "enabled" "disabled")))))
+
+(defun handle-cmd-help (chan chat-id)
+  "Handle /help — list available commands."
+  (telegram-send-message chan chat-id
+   "🤖 *Clawmacs Bot Commands*~%~%~
+    /new — Start a fresh conversation~%~
+    /reset — Same as /new~%~
+    /status — Show session info (model, uptime, tokens)~%~
+    /model — Show current model~%~
+    /model <name> — Switch to a different model~%~
+    /help — Show this help~%~%~
+    Any other message is sent to the AI."))
+
+(defun handle-cmd-model (chan chat-id session args)
+  "Handle /model [new-model-name] — show or change the current model."
+  (let* ((agent (clawmacs/session:session-agent session))
+         (current (clawmacs/agent:agent-model agent)))
+    (if (or (null args) (string= (string-trim " " args) ""))
+        ;; Show current model
+        (telegram-send-message chan chat-id
+         (format nil "🤖 Current model: `~A`" current))
+        ;; Change model
+        (let ((new-model (string-trim " " args)))
+          (setf (clawmacs/agent:agent-model agent) new-model)
+          ;; Also update the client if possible
+          (handler-case
+              (let ((client (clawmacs/agent:agent-client agent)))
+                (setf (cl-llm:client-model client) new-model))
+            (error () nil))
+          (format t "~&[telegram] /model — changed from ~A to ~A for chat ~A~%"
+                  current new-model chat-id)
+          (telegram-send-message chan chat-id
+           (format nil "✅ Model changed to `~A`" new-model))))))
+
+(defun %parse-command (text)
+  "Parse a slash command from TEXT.
+Returns (values command args) where command is e.g. \"new\" and args is remainder.
+Returns (values nil nil) if TEXT is not a slash command."
+  (when (and (> (length text) 0) (char= (char text 0) #\/))
+    (let* (;; Strip leading slash, handle /cmd@botname format
+           (body (subseq text 1))
+           (at-pos (position #\@ body))
+           (body2 (if at-pos (subseq body 0 at-pos) body))
+           (space-pos (position #\Space body2))
+           (cmd (if space-pos
+                    (subseq body2 0 space-pos)
+                    body2))
+           (args (if space-pos
+                     (string-trim " " (subseq body2 (1+ space-pos)))
+                     "")))
+      (values (string-downcase cmd) args))))
+
+(defun dispatch-command (chan chat-id session text)
+  "Try to dispatch TEXT as a slash command. Returns T if handled, NIL otherwise."
+  (multiple-value-bind (cmd args)
+      (%parse-command text)
+    (when cmd
+      (cond
+        ((or (string= cmd "new") (string= cmd "reset"))
+         (handle-cmd-new chan chat-id session)
+         t)
+        ((string= cmd "status")
+         (handle-cmd-status chan chat-id session)
+         t)
+        ((or (string= cmd "help") (string= cmd "start"))
+         (handle-cmd-help chan chat-id)
+         t)
+        ((string= cmd "model")
+         (handle-cmd-model chan chat-id session args)
+         t)
+        (t
+         ;; Unknown command
+         (telegram-send-message chan chat-id
+          (format nil "Unknown command: /~A~%Type /help to see available commands." cmd))
+         t)))))
+
+(defun %register-bot-commands (chan)
+  "Register bot commands with Telegram via setMyCommands API.
+Called on startup to populate the command menu in Telegram clients."
+  (handler-case
+      (let ((commands
+             (vector
+              (let ((ht (make-hash-table :test 'equal)))
+                (setf (gethash "command" ht) "new")
+                (setf (gethash "description" ht) "Start a fresh conversation")
+                ht)
+              (let ((ht (make-hash-table :test 'equal)))
+                (setf (gethash "command" ht) "reset")
+                (setf (gethash "description" ht) "Clear history (same as /new)")
+                ht)
+              (let ((ht (make-hash-table :test 'equal)))
+                (setf (gethash "command" ht) "status")
+                (setf (gethash "description" ht) "Show session info")
+                ht)
+              (let ((ht (make-hash-table :test 'equal)))
+                (setf (gethash "command" ht) "model")
+                (setf (gethash "description" ht) "Show or change current model")
+                ht)
+              (let ((ht (make-hash-table :test 'equal)))
+                (setf (gethash "command" ht) "help")
+                (setf (gethash "description" ht) "List available commands")
+                ht))))
+        (let* ((url  (telegram-api-url (telegram-channel-token chan) "setMyCommands"))
+               (body (let ((ht (make-hash-table :test 'equal)))
+                       (setf (gethash "commands" ht) commands)
+                       (com.inuoe.jzon:stringify ht)))
+               (resp (dexador:post url
+                                   :headers '(("Content-Type" . "application/json"))
+                                   :content body))
+               (parsed (com.inuoe.jzon:parse resp)))
+          (if (gethash "ok" parsed)
+              (format t "~&[telegram] Bot commands registered successfully.~%")
+              (format *error-output*
+                      "~&[telegram] setMyCommands failed: ~A~%" parsed))))
+    (error (e)
+      (format *error-output*
+              "~&[telegram] Failed to register bot commands: ~A~%" e))))
+
+;;;; ─────────────────────────────────────────────────────────────────────────────
+;;;; § 9. Update Processing (was § 8)
 ;;;; ─────────────────────────────────────────────────────────────────────────────
 
 (defun %extract-message-fields (update)
@@ -452,6 +632,9 @@ rather than crashing the polling loop."
 
          ;; Get or create session for this chat, then dispatch
          (let ((session (find-or-create-session chan chat-id)))
+           ;; Check for slash commands first
+           (when (dispatch-command chan chat-id session text)
+             (return-from process-update nil))
            ;; Show typing indicator while processing
            (telegram-send-chat-action chan chat-id "typing")
            (if *telegram-streaming*
@@ -538,6 +721,9 @@ Returns CHAN."
     (format t "~&[telegram] Channel is already running.~%")
     (return-from start-telegram chan))
   (setf (telegram-channel-running chan) t)
+  (setf *bot-start-time* (get-universal-time))
+  ;; Register slash commands with Telegram
+  (%register-bot-commands chan)
   (setf (telegram-channel-thread chan)
         (bt:make-thread
          (lambda () (%polling-loop chan))
