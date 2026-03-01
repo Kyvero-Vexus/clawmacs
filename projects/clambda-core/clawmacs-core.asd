@@ -51,6 +51,8 @@
                (:file "src/http-server")
                ;; Layer 6a: Emacs-style config system
                (:file "src/config")
+               ;; Layer 11: Dynamic system prompt builder (before channels)
+               (:file "src/system-prompt")
                ;; Layer 6b: Telegram Bot API channel
                (:file "src/telegram")
                ;; Layer 6c: IRC client channel (raw sockets)

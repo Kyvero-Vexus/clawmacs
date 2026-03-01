@@ -219,25 +219,64 @@ Rules:
 ;;;; § 6. Session Management
 ;;;; ─────────────────────────────────────────────────────────────────────────────
 
+(defvar *telegram-agent-name* "telegram-bot"
+  "Name used for the Telegram bot agent. Corresponds to the agent name shown in logs and system prompt.")
+
+(defvar *telegram-agent-workspace* nil
+  "Workspace path for the Telegram bot agent.
+If NIL, defaults to ~/.clawmacs/agents/ceo-chryso/ (or the first registered agent's workspace).
+Set from init.lisp or register-channel.")
+
+(defun %resolve-telegram-workspace ()
+  "Return the workspace path for the Telegram agent.
+Checks *TELEGRAM-AGENT-WORKSPACE* first, then looks up the agent registry."
+  (or *telegram-agent-workspace*
+      (handler-case
+          (let* ((registry clawmacs/registry:*agent-registry*)
+                 ;; Try ceo-chryso first (the standard Telegram persona)
+                 (spec (or (clawmacs/registry:find-agent "ceo-chryso")
+                           (and registry (first (clawmacs/registry:list-agents))))))
+            (when spec
+              (clawmacs/registry:agent-spec-workspace spec)))
+        (error () nil))
+      (merge-pathnames ".clawmacs/agents/telegram/"
+                       (user-homedir-pathname))))
+
+(defun %build-telegram-system-prompt (registry)
+  "Build the dynamic system prompt for the Telegram agent.
+Includes personality from *TELEGRAM-SYSTEM-PROMPT*, tool listing, workspace files, runtime info."
+  (handler-case
+      (clawmacs/system-prompt:build-telegram-system-prompt
+       :agent-name        *telegram-agent-name*
+       :workspace-path    (%resolve-telegram-workspace)
+       :tool-registry     registry
+       :personality-prompt *telegram-system-prompt*)
+    (error (e)
+      ;; Fall back to static prompt if builder fails
+      (format *error-output*
+              "~&[telegram] system-prompt builder error: ~A — using static prompt~%" e)
+      *telegram-system-prompt*)))
+
 (defun %make-telegram-agent ()
   "Build a default Clawmacs agent for Telegram.
 
 Client:  *TELEGRAM-LLM-BASE-URL* + *TELEGRAM-LLM-API-KEY* + *DEFAULT-MODEL*.
-Tools:   builtin registry (exec, read_file, write_file, list_dir, web_fetch, tts).
-Prompt:  *TELEGRAM-SYSTEM-PROMPT*.
+Tools:   builtin registry (exec, read_file, write_file, list_dir, web_fetch, tts, eval_lisp, etc.).
+Prompt:  dynamically built by BUILD-TELEGRAM-SYSTEM-PROMPT (workspace files + tool listing).
 
 Users can override any of these vars in init.lisp before starting the channel."
   (let* ((client   (cl-llm:make-client
                     :base-url *telegram-llm-base-url*
                     :api-key  *telegram-llm-api-key*
                     :model    clawmacs/config:*default-model*))
-         (registry (clawmacs/builtins:make-builtin-registry)))
+         (registry (clawmacs/builtins:make-builtin-registry))
+         (prompt   (%build-telegram-system-prompt registry)))
     (clawmacs/agent:make-agent
-     :name          "telegram-bot"
+     :name          *telegram-agent-name*
      :model         clawmacs/config:*default-model*
      :client        client
      :tool-registry registry
-     :system-prompt *telegram-system-prompt*)))
+     :system-prompt prompt)))
 
 (defun find-or-create-session (chan chat-id)
   "Find the Clawmacs session for CHAT-ID in CHAN, creating one if needed.

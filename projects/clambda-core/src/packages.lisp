@@ -474,6 +474,29 @@
    #:*vision-model* #:*vision-base-url*
    #:*gemini-api-key*))
 
+;;; ── System Prompt Builder ────────────────────────────────────────────────────
+;;;
+;;; Dynamic system prompt assembly — workspace file injection, tool listing,
+;;; safety guardrails, runtime info. Called when creating new sessions/agents.
+
+(defpackage #:clawmacs/system-prompt
+  (:use #:cl)
+  (:import-from #:clawmacs/tools
+                #:tool-definitions-for-llm)
+  (:import-from #:cl-llm/protocol
+                #:tool-definition-name
+                #:tool-definition-description)
+  (:export
+   ;; Config
+   #:*workspace-inject-files*
+   #:*max-chars-per-file*
+   #:*max-chars-total*
+   ;; Core functions
+   #:inject-workspace-files
+   #:format-tool-listing
+   #:build-system-prompt
+   #:build-telegram-system-prompt))
+
 ;;; ── Telegram Channel ─────────────────────────────────────────────────────────
 ;;;
 ;;; Telegram Bot API channel — long-polling, background thread, per-chat sessions.
@@ -489,6 +512,9 @@
   ;; Import *on-stream-delta* for the streaming callback binding.
   (:import-from #:clawmacs/loop
                 #:*on-stream-delta*)
+  ;; System prompt builder
+  (:import-from #:clawmacs/system-prompt
+                #:build-telegram-system-prompt)
   (:export
    ;; Channel struct
    #:telegram-channel
@@ -506,6 +532,8 @@
    #:*telegram-llm-api-key*
    #:*telegram-system-prompt*
    #:*telegram-poll-timeout*
+   #:*telegram-agent-name*
+   #:*telegram-agent-workspace*
    ;; Streaming options (Layer 9a)
    #:*telegram-streaming*
    #:*telegram-stream-debounce-ms*
@@ -693,6 +721,11 @@
    #:*available-models*
    #:*openrouter-api-key*
    #:register-imagegen-tool!))
+
+;;; ── System Prompt Builder ────────────────────────────────────────────────────
+;;;
+;;; Dynamic system prompt assembly — workspace file injection, tool listing,
+;;; safety guardrails, runtime info. Called when creating new sessions/agents.
 
 ;;; ── Top-level convenience package ────────────────────────────────────────────
 
