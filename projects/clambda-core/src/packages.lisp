@@ -468,7 +468,8 @@
    #:*workspace-inject-refresh-interval*
    #:*model-supports-vision*
    #:*embedding-model* #:*embedding-base-url*
-   #:*vision-model* #:*vision-base-url*))
+   #:*vision-model* #:*vision-base-url*
+   #:*gemini-api-key*))
 
 ;;; ── Telegram Channel ─────────────────────────────────────────────────────────
 ;;;
@@ -679,6 +680,17 @@
    ;; Save function
    #:save-clawmacs-image))
 
+;;; ── OpenRouter Image Generation ──────────────────────────────────────────────
+
+(defpackage #:clawmacs/imagegen
+  (:use #:cl)
+  (:export
+   #:generate-image
+   #:*imagegen-default-model*
+   #:*available-models*
+   #:*openrouter-api-key*
+   #:register-imagegen-tool!))
+
 ;;; ── Top-level convenience package ────────────────────────────────────────────
 
 (defpackage #:clawmacs
@@ -868,6 +880,12 @@
   ;; Lisp Superpowers: Image save/restore
   (:import-from #:clawmacs/image
                 #:clawmacs-main #:save-clawmacs-image)
+  (:import-from #:clawmacs/imagegen
+                #:generate-image
+                #:*imagegen-default-model*
+                #:*available-models*
+                #:*openrouter-api-key*
+                #:register-imagegen-tool!)
   (:export
    ;; Agent
    #:agent #:make-agent
@@ -931,6 +949,7 @@
    #:*workspace-inject-refresh-interval* #:*model-supports-vision*
    #:*embedding-model* #:*embedding-base-url*
    #:*vision-model* #:*vision-base-url*
+   #:*gemini-api-key*
    ;; Conditions
    #:clawmacs-error #:agent-error #:session-error
    #:tool-not-found
@@ -1046,6 +1065,12 @@
    #:start-swank #:stop-swank #:swank-running-p
    ;; Lisp Superpowers: Image save/restore (P1)
    #:clawmacs-main #:save-clawmacs-image
+   ;; OpenRouter image generation
+   #:generate-image
+   #:*imagegen-default-model*
+   #:*available-models*
+   #:*openrouter-api-key*
+   #:register-imagegen-tool!
    ;; Bootstrap / workspace scaffolding
    #:*bootstrap-templates*
    #:register-template #:find-template #:list-templates

@@ -61,7 +61,9 @@
                (:file "src/swank")
                ;; Layer 9 (P1): Image save/restore (Genera-style)
                (:file "src/bootstrap")
-               (:file "src/image"))
+               (:file "src/image")
+               ;; Layer 10: OpenRouter free image generation
+               (:file "src/imagegen"))
   :in-order-to ((test-op (test-op "clawmacs-core/tests"))))
 
 (defsystem "clawmacs-core/tests"
