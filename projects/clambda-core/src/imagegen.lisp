@@ -74,7 +74,7 @@ Signals an error if no key is found."
         (when (and env-key (not (string= env-key "")))
           env-key))
       (read-openclaw-json-key '("env" "OPENROUTER_API_KEY"))
-      (error "OPENROUTER_API_KEY not found. Set clawmacs/imagegen:*openrouter-api-key*, the OPENROUTER_API_KEY environment variable, or add it to ~/.openclaw/openclaw.json under env.OPENROUTER_API_KEY.")))
+      (error (make-condition 'simple-error :format-control "OPENROUTER_API_KEY not found. Set clawmacs/imagegen:*openrouter-api-key*, the OPENROUTER_API_KEY environment variable, or add it to ~~/.openclaw/openclaw.json under env.OPENROUTER_API_KEY."))))
 
 ;;;; ─────────────────────────────────────────────────────────────────────────────
 ;;;; § 3. Core API Call

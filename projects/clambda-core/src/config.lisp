@@ -150,6 +150,10 @@ Useful from init.lisp or the REPL to discover what's configurable."
   :type (or null string)
   :doc "Optional base URL override used specifically for image_analyze.")
 
+(defoption *gemini-api-key* nil
+  :type (or null string)
+  :doc "Google Gemini API key used for web_search (Gemini Search Grounding).")
+
 ;;;; ─────────────────────────────────────────────────────────────────────────────
 ;;;; § 4. Hook System
 ;;;; ─────────────────────────────────────────────────────────────────────────────

@@ -320,6 +320,94 @@ Returns REGISTRY."
                                 :|description| "Maximum characters to return (default: 50000)"))
                  :|required| #("url")))
 
+  ;; ── web-search (Gemini Search Grounding) ─────────────────────────────────
+  (clawmacs/tools:register-tool!
+   registry
+   "web_search"
+   (lambda (args)
+     (let* ((query (gethash "query" args))
+            (api-key (%config-value "*GEMINI-API-KEY*")))
+       (cond
+         ((or (null query) (string= query ""))
+          (clawmacs/tools:tool-result-error "No query provided"))
+         ((or (null api-key) (string= api-key ""))
+          (clawmacs/tools:tool-result-error
+           "web_search requires a Gemini API key. Set *gemini-api-key* in init.lisp."))
+         (t
+          (handler-case
+              (let* ((endpoint
+                       (format nil
+                               "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=~a"
+                               api-key))
+                     (body
+                       (with-output-to-string (s)
+                         (com.inuoe.jzon:stringify
+                          (let ((ht (make-hash-table :test #'equal)))
+                            (setf (gethash "contents" ht)
+                                  (vector
+                                   (let ((c (make-hash-table :test #'equal)))
+                                     (setf (gethash "parts" c)
+                                           (vector
+                                            (let ((p (make-hash-table :test #'equal)))
+                                              (setf (gethash "text" p) query)
+                                              p)))
+                                     c)))
+                            (setf (gethash "tools" ht)
+                                  (vector
+                                   (let ((t- (make-hash-table :test #'equal)))
+                                     (setf (gethash "google_search" t-)
+                                           (make-hash-table :test #'equal))
+                                     t-)))
+                            ht)
+                          :stream s)))
+                     (raw-response
+                       (dexador:post endpoint
+                                     :content body
+                                     :headers '(("Content-Type" . "application/json"))
+                                     :force-string t))
+                     (parsed (com.inuoe.jzon:parse raw-response))
+                     ;; Extract text from candidates[0].content.parts[0].text
+                     (candidates (gethash "candidates" parsed))
+                     (first-candidate (and candidates (> (length candidates) 0)
+                                           (aref candidates 0)))
+                     (content (and first-candidate
+                                   (gethash "content" first-candidate)))
+                     (parts (and content (gethash "parts" content)))
+                     (text (and parts (> (length parts) 0)
+                                (gethash "text" (aref parts 0))))
+                     ;; Extract grounding metadata (citations)
+                     (grounding-meta (and first-candidate
+                                          (gethash "groundingMetadata" first-candidate)))
+                     (chunks (and grounding-meta
+                                  (gethash "groundingChunks" grounding-meta))))
+                (clawmacs/tools:tool-result-ok
+                 (with-output-to-string (out)
+                   (when text (write-string text out))
+                   (when (and chunks (> (length chunks) 0))
+                     (format out "~%~%Sources:~%")
+                     (loop :for i :below (length chunks)
+                           :for chunk = (aref chunks i)
+                           :for web = (gethash "web" chunk)
+                           :when web
+                             :do (format out "  [~a] ~a~@[ — ~a~]~%"
+                                         (1+ i)
+                                         (or (gethash "uri" web) "")
+                                         (gethash "title" web)))))))
+            (dexador:http-request-failed (e)
+              (clawmacs/tools:tool-result-error
+               (format nil "Gemini API request failed: ~a" e)))
+            (error (e)
+              (clawmacs/tools:tool-result-error
+               (format nil "web_search failed: ~a" e))))))))
+   :description
+   "Search the web using the Gemini API with Google Search grounding.
+Returns an AI-synthesized answer with citations. Requires *gemini-api-key* to be set."
+   :parameters '(:|type| "object"
+                 :|properties|
+                 (:|query| (:|type| "string"
+                            :|description| "Search query"))
+                 :|required| #("query")))
+
   ;; ── tts ───────────────────────────────────────────────────────────────────
   (clawmacs/tools:register-tool!
    registry
