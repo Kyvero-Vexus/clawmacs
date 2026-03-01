@@ -234,6 +234,7 @@ Users can override any of these vars in init.lisp before starting the channel."
          (registry (clawmacs/builtins:make-builtin-registry)))
     (clawmacs/agent:make-agent
      :name          "telegram-bot"
+     :model         clawmacs/config:*default-model*
      :client        client
      :tool-registry registry
      :system-prompt *telegram-system-prompt*)))
@@ -431,14 +432,16 @@ Steps:
   (setf (clawmacs/session:session-total-tokens session) 0)
   (format t "~&[telegram] /new — cleared session for chat ~A~%" chat-id)
   (telegram-send-message chan chat-id
-   "✅ *New session started.* Conversation history cleared."))
+   "✅ <b>New session started.</b> Conversation history cleared."
+   :parse-mode "HTML"))
 
 (defun handle-cmd-status (chan chat-id session)
   "Handle /status — show session info."
   (let* ((agent   (clawmacs/session:session-agent session))
-         (model   (clawmacs/agent:agent-model agent))
+         (model   (or (clawmacs/agent:agent-model agent) "(unknown)"))
          (uptime  (%format-uptime (- (get-universal-time) *bot-start-time*)))
          (msgs    (length (clawmacs/session:session-messages session)))
+         (tracked (clawmacs/session:session-total-tokens session))
          (tokens  (%session-token-estimate session))
          (window  (if (boundp 'clawmacs/config:*default-context-window*)
                       clawmacs/config:*default-context-window*
@@ -448,28 +451,29 @@ Steps:
                       0)))
     (telegram-send-message chan chat-id
      (format nil
-      "📊 *Clawmacs Status*~%~%~
-       Model: `~A`~%~
-       Uptime: ~A~%~
-       Messages in history: ~A~%~
-       Token usage: ~A / ~A (~A%%)~%~
-       Compaction: ~A"
-      model uptime msgs tokens window pct
+      "📊 <b>Clawmacs Status</b>~%~%Model: <code>~A</code>~%Uptime: ~A~%Messages in history: ~A~%Token usage: ~A~%Compaction: ~A"
+      model uptime msgs
+      (if (= tracked 0)
+          (format nil "~A (estimated) / ~A (~A%%)" tokens window pct)
+          (format nil "~A / ~A (~A%%)" tokens window pct))
       (if (and (boundp 'clawmacs/config:*compaction-enabled*)
                clawmacs/config:*compaction-enabled*)
-          "enabled" "disabled")))))
+          "enabled" "disabled"))
+     :parse-mode "HTML")))
 
 (defun handle-cmd-help (chan chat-id)
   "Handle /help — list available commands."
   (telegram-send-message chan chat-id
-   "🤖 *Clawmacs Bot Commands*~%~%~
-    /new — Start a fresh conversation~%~
-    /reset — Same as /new~%~
-    /status — Show session info (model, uptime, tokens)~%~
-    /model — Show current model~%~
-    /model <name> — Switch to a different model~%~
-    /help — Show this help~%~%~
-    Any other message is sent to the AI."))
+   (concatenate 'string
+    "🤖 <b>Clawmacs Bot Commands</b>\n\n"
+    "/new — Start a fresh conversation\n"
+    "/reset — Same as /new\n"
+    "/status — Show session info (model, uptime, tokens)\n"
+    "/model — Show current model\n"
+    "/model &lt;name&gt; — Switch to a different model\n"
+    "/help — Show this help\n\n"
+    "Any other message is sent to the AI.")
+   :parse-mode "HTML"))
 
 (defun handle-cmd-model (chan chat-id session args)
   "Handle /model [new-model-name] — show or change the current model."
@@ -478,7 +482,8 @@ Steps:
     (if (or (null args) (string= (string-trim " " args) ""))
         ;; Show current model
         (telegram-send-message chan chat-id
-         (format nil "🤖 Current model: `~A`" current))
+         (format nil "🤖 Current model: <code>~A</code>" current)
+         :parse-mode "HTML")
         ;; Change model
         (let ((new-model (string-trim " " args)))
           (setf (clawmacs/agent:agent-model agent) new-model)
@@ -490,7 +495,8 @@ Steps:
           (format t "~&[telegram] /model — changed from ~A to ~A for chat ~A~%"
                   current new-model chat-id)
           (telegram-send-message chan chat-id
-           (format nil "✅ Model changed to `~A`" new-model))))))
+           (format nil "✅ Model changed to <code>~A</code>" new-model)
+           :parse-mode "HTML")))))
 
 (defun %parse-command (text)
   "Parse a slash command from TEXT.
@@ -531,7 +537,8 @@ Returns (values nil nil) if TEXT is not a slash command."
         (t
          ;; Unknown command
          (telegram-send-message chan chat-id
-          (format nil "Unknown command: /~A~%Type /help to see available commands." cmd))
+          (format nil "Unknown command: /~A&#10;Type /help to see available commands." cmd)
+          :parse-mode "HTML")
          t)))))
 
 (defun %register-bot-commands (chan)
