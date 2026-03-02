@@ -68,6 +68,7 @@ Inspect options:
 
 ;; Use codex CLI (OAuth session from `codex login`)
 (setf clawmacs/telegram:*telegram-llm-api-type* :codex-cli)
+(setf clawmacs/telegram:*telegram-codex-auth-mode* :oauth-session)
 (setf *default-model* "gpt-5-codex")
 ```
 
@@ -75,6 +76,12 @@ You can also construct a client directly:
 
 ```lisp
 (cl-llm:make-codex-cli-client :model "gpt-5-codex")
+```
+
+Check OAuth linkage quickly:
+
+```lisp
+(cl-llm:codex-auth-status-string :model *default-model*)
 ```
 
 See full setup/link flow: [Codex OAuth](../auth/codex-oauth.md)

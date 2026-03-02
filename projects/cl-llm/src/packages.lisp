@@ -166,6 +166,9 @@
   (:export
    #:*codex-cli-path*
    #:*codex-cli-default-model*
+   #:*codex-auth-mode*
+   #:codex-auth-status
+   #:codex-auth-status-string
    #:codex-cli-chat
    #:codex-cli-chat-stream))
 
@@ -176,6 +179,8 @@
                 #:client #:make-client #:make-anthropic-client #:make-claude-cli-client #:make-codex-cli-client
                 #:client-base-url #:client-api-key #:client-model #:client-api-type
                 #:chat #:chat-stream #:simple-chat #:with-client)
+  (:import-from #:cl-llm/codex-cli
+                #:*codex-auth-mode* #:codex-auth-status #:codex-auth-status-string)
   (:import-from #:cl-llm/protocol
                 #:message #:system-message #:user-message
                 #:assistant-message #:tool-message
@@ -207,6 +212,8 @@
    ;; Client
    #:client #:make-client #:make-anthropic-client #:make-claude-cli-client #:make-codex-cli-client
    #:client-base-url #:client-api-key #:client-model #:client-api-type
+   ;; Codex OAuth diagnostics
+   #:*codex-auth-mode* #:codex-auth-status #:codex-auth-status-string
    #:chat #:chat-stream #:simple-chat #:with-client
    ;; Messages
    #:message #:system-message #:user-message

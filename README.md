@@ -57,6 +57,8 @@ Notes:
 ## OAuth CLI sessions
 
 Clawmacs supports OAuth-authenticated CLI backends for local auth flows, including Codex.
+OpenClaw-parity behavior for Codex uses `codex login` + auto-discovery of linked session files under `~/.codex/`.
+Diagnostics are available via `(cl-llm:codex-auth-status-string)` and Telegram `/codex_auth_status`.
 See [Codex OAuth setup](docs/auth/codex-oauth.md) for link/login, config, and troubleshooting.
 
 ---

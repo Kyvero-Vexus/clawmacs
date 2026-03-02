@@ -26,15 +26,19 @@ Follow the browser/device prompts until the CLI reports success.
 
 ## 3) Where session credentials are stored
 
-The OAuth session is stored by the Codex CLI in its own local config/state directory (managed by the CLI, not by Clawmacs).
+Clawmacs mirrors OpenClaw behavior and auto-discovers the Codex OAuth session from the local Codex CLI state directory, typically under:
 
-To inspect where your CLI keeps config on your machine, run:
-
-```bash
-codex --help
+```text
+~/.codex/
 ```
 
-and check the config/state section for your platform.
+Common files detected by Clawmacs include:
+- `~/.codex/auth.json`
+- `~/.codex/credentials.json`
+- `~/.codex/token.json`
+- `~/.codex/config.json`
+
+(Exact file names are CLI-managed and may vary by Codex version.)
 
 ## 4) Required `init.lisp` config
 
@@ -44,8 +48,11 @@ Set Clawmacs to use the Codex CLI backend explicitly:
 (in-package #:clawmacs-user)
 
 (setf clawmacs/telegram:*telegram-llm-api-type* :codex-cli)
+(setf clawmacs/telegram:*telegram-codex-auth-mode* :oauth-session)
 (setf *default-model* "gpt-5-codex")
 ```
+
+`*telegram-llm-api-key*` is ignored for `:codex-cli` mode; OAuth session is used automatically.
 
 If you build clients directly, use:
 
@@ -61,16 +68,17 @@ First verify CLI auth outside Clawmacs:
 codex exec --json --model gpt-5-codex "Reply with: oauth-ok"
 ```
 
-Then verify Clawmacs loads with your config:
+Then verify diagnostics in Clawmacs:
 
 ```bash
 sbcl --eval '(ql:quickload :clawmacs-core)' \
-     --eval '(clawmacs/config:load-user-config)' \
-     --eval '(format t "Loaded config with api-type=~A~%" clawmacs/telegram:*telegram-llm-api-type*)' \
+     --eval '(format t "~A~%" (cl-llm:codex-auth-status-string :model "gpt-5-codex"))' \
      --quit
 ```
 
-Expected: api type prints `CODEX-CLI` (or `:CODEX-CLI` depending on printer settings).
+In Telegram sessions, you can also check:
+- `/status` (includes Codex CLI + OAuth linked/missing when in `:codex-cli` mode)
+- `/codex_auth_status` (full diagnostics + remediation commands)
 
 ## 6) Troubleshooting
 

@@ -11,6 +11,86 @@
 (defvar *codex-cli-default-model* "gpt-5-codex"
   "Default model to use with codex CLI.")
 
+(defvar *codex-auth-mode* :oauth-session
+  "Codex CLI auth strategy.
+
+:OAUTH-SESSION (default): discover and use the Codex OAuth session created by
+`codex login` (OpenClaw-parity behavior).")
+
+(defun %command-exists-p (cmd)
+  "Return T if CMD resolves on PATH."
+  (handler-case
+      (multiple-value-bind (_out _err code)
+          (uiop:run-program (list "sh" "-lc" (format nil "command -v ~A >/dev/null 2>&1" cmd))
+                            :ignore-error-status t
+                            :output :string
+                            :error-output :string)
+        (declare (ignore _out _err))
+        (zerop code))
+    (error () nil)))
+
+(defun %candidate-session-files ()
+  "Return plausible Codex OAuth session file paths under ~/.codex/."
+  (let* ((home (user-homedir-pathname))
+         (codex-dir (merge-pathnames ".codex/" home)))
+    (mapcar (lambda (name) (merge-pathnames name codex-dir))
+            '("auth.json" "credentials.json" "token.json" "config.json"))))
+
+(defun %existing-session-files ()
+  "Return a list of existing Codex auth/session files."
+  (remove nil (mapcar (lambda (p) (and (probe-file p) p))
+                      (%candidate-session-files))))
+
+(defun codex-auth-status (&key model)
+  "Return a plist describing Codex OAuth readiness.
+
+Keys:
+  :CODEX-CLI-FOUND      boolean
+  :LINKED-SESSION-FOUND boolean
+  :ACTIVE-MODEL         string
+  :SESSION-FILES        list of path strings
+  :AUTH-MODE            keyword
+  :REMEDIATION          list of shell commands" 
+  (let* ((cli-found (%command-exists-p *codex-cli-path*))
+         (session-files (%existing-session-files))
+         (session-found (and session-files t))
+         (active-model (or model *codex-cli-default-model*))
+         (remediation
+           (cond
+             ((not cli-found)
+              (list "Install Codex CLI, then verify with: codex --help"
+                    "Link your account with: codex login"))
+             ((not session-found)
+              (list "Link your account with: codex login"
+                    "Verify session with: ls -la ~/.codex"))
+             (t
+              (list "Session looks present. If requests fail/expire, refresh with: codex login")))))
+    (list :codex-cli-found cli-found
+          :linked-session-found session-found
+          :active-model active-model
+          :session-files (mapcar #'namestring session-files)
+          :auth-mode *codex-auth-mode*
+          :remediation remediation)))
+
+(defun codex-auth-status-string (&key model)
+  "Return a one-shot human-readable Codex auth status report string."
+  (destructuring-bind (&key codex-cli-found linked-session-found active-model
+                            session-files auth-mode remediation &allow-other-keys)
+      (codex-auth-status :model model)
+    (with-output-to-string (s)
+      (format s "Codex auth status~%")
+      (format s "- codex CLI: ~A~%" (if codex-cli-found "found" "NOT found"))
+      (format s "- linked OAuth session: ~A~%" (if linked-session-found "found" "NOT found"))
+      (format s "- auth mode: ~A~%" auth-mode)
+      (format s "- active model: ~A~%" active-model)
+      (when session-files
+        (format s "- session files:~%")
+        (dolist (f session-files)
+          (format s "  - ~A~%" f)))
+      (format s "- remediation:~%")
+      (dolist (cmd remediation)
+        (format s "  - ~A~%" cmd)))))
+
 (defun %messages->system-prompt (messages)
   "Extract and return the system message content from MESSAGES, or NIL."
   (let ((sys (find :system messages :key #'cl-llm/protocol:message-role)))
@@ -116,17 +196,27 @@ Signals an error with guidance when the OAuth session is missing/expired."
                    :finish-reason "stop"))
    :usage nil))
 
+(defun %ensure-codex-oauth-ready (&key model)
+  "Signal actionable error if Codex CLI or linked OAuth session is missing." 
+  (destructuring-bind (&key codex-cli-found linked-session-found remediation &allow-other-keys)
+      (codex-auth-status :model model)
+    (unless codex-cli-found
+      (error "Codex CLI not found on PATH.~%Recovery:~%  ~{~A~%  ~}" remediation))
+    (unless linked-session-found
+      (error "Codex OAuth session not found under ~/.codex/.~%Recovery:~%  ~{~A~%  ~}" remediation))))
+
 (defun codex-cli-chat (messages &key model system-prompt max-tokens)
   "Send MESSAGES to Codex via codex CLI and return a COMPLETION-RESPONSE."
   (declare (ignore max-tokens))
   (let* ((effective-system (or system-prompt (%messages->system-prompt messages)))
          (prompt (or (%messages->prompt messages) ""))
-         (effective-model (or model *codex-cli-default-model*))
-         (args (%build-cli-args prompt :model effective-model :system-prompt effective-system)))
-    (multiple-value-bind (output exit-code error-output)
-        (%run-cli args)
-      (let ((text (%parse-cli-output output exit-code error-output)))
-        (%text->completion-response text effective-model)))))
+         (effective-model (or model *codex-cli-default-model*)))
+    (%ensure-codex-oauth-ready :model effective-model)
+    (let ((args (%build-cli-args prompt :model effective-model :system-prompt effective-system)))
+      (multiple-value-bind (output exit-code error-output)
+          (%run-cli args)
+        (let ((text (%parse-cli-output output exit-code error-output)))
+          (%text->completion-response text effective-model))))))
 
 (defun codex-cli-chat-stream (messages callback &key model system-prompt max-tokens)
   "Like CODEX-CLI-CHAT but calls CALLBACK once with full text."

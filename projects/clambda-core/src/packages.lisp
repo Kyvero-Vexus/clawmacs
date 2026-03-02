@@ -538,6 +538,7 @@
    #:*telegram-llm-base-url*
    #:*telegram-llm-api-key*
    #:*telegram-llm-api-type*
+   #:*telegram-codex-auth-mode*
    #:*telegram-system-prompt*
    #:*telegram-poll-timeout*
    #:*telegram-agent-name*
@@ -877,6 +878,7 @@
                 #:telegram-channel-running #:telegram-channel-thread
                 #:*telegram-channel*
                 #:*telegram-llm-base-url* #:*telegram-llm-api-key* #:*telegram-llm-api-type*
+                #:*telegram-codex-auth-mode*
                 #:*telegram-system-prompt* #:*telegram-poll-timeout*
                 #:*telegram-streaming* #:*telegram-stream-debounce-ms*
                 #:telegram-api-url #:telegram-get-me
@@ -1076,6 +1078,7 @@
    #:telegram-channel-running #:telegram-channel-thread
    #:*telegram-channel*
    #:*telegram-llm-base-url* #:*telegram-llm-api-key* #:*telegram-llm-api-type*
+   #:*telegram-codex-auth-mode*
    #:*telegram-system-prompt* #:*telegram-poll-timeout*
    #:*telegram-streaming* #:*telegram-stream-debounce-ms*
    #:telegram-api-url #:telegram-get-me
@@ -1180,6 +1183,7 @@
                 #:telegram-running-p #:start-all-channels
                 #:*telegram-channel*
                 #:*telegram-llm-base-url* #:*telegram-llm-api-key* #:*telegram-llm-api-type*
+                #:*telegram-codex-auth-mode*
                 #:*telegram-system-prompt*
                 #:*telegram-streaming* #:*telegram-stream-debounce-ms*)
   (:import-from #:clawmacs/irc
@@ -1256,6 +1260,7 @@
    #:telegram-running-p #:start-all-channels
    #:*telegram-channel*
    #:*telegram-llm-base-url* #:*telegram-llm-api-key* #:*telegram-llm-api-type*
+   #:*telegram-codex-auth-mode*
    #:*telegram-system-prompt*
    #:*telegram-streaming* #:*telegram-stream-debounce-ms*
    ;; IRC channel lifecycle (most useful from init.lisp)

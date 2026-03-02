@@ -86,7 +86,8 @@ If you want to use Codex via OAuth (no API key in init):
 codex login
 ```
 
-Then set Telegram/client API type to `:codex-cli` in init.lisp (see config guide).
+Then set Telegram/client API type to `:codex-cli` + auth mode `:oauth-session` in init.lisp (see config guide).
+Verify with `(cl-llm:codex-auth-status-string)` or Telegram `/codex_auth_status`.
 Full guide: [Codex OAuth](../auth/codex-oauth.md)
 
 ## Next Steps

@@ -47,6 +47,13 @@ Use :OPENAI (default) for OpenAI-compatible APIs (OpenRouter, LM Studio, etc.)
 Use :ANTHROPIC for the direct Anthropic Messages API.
 Use :CLAUDE-CLI or :CODEX-CLI for OAuth-authenticated local CLI backends.")
 
+(defvar *telegram-codex-auth-mode* :oauth-session
+  "Auth mode used when *TELEGRAM-LLM-API-TYPE* is :CODEX-CLI.
+
+:OAUTH-SESSION (default) mirrors OpenClaw behavior: rely on the linked
+local Codex CLI OAuth session (created by `codex login`) and do not require
+an API key in Clawmacs config.")
+
 (defvar *telegram-system-prompt*
   "You are a helpful AI assistant accessible via Telegram. \
 Keep responses concise and suitable for a chat interface."
@@ -279,6 +286,13 @@ Users can override any of these vars in init.lisp before starting the channel."
                       (cl-llm:make-claude-cli-client
                        :model clawmacs/config:*default-model*))
                      ((eq *telegram-llm-api-type* :codex-cli)
+                      (setf cl-llm:*codex-auth-mode* *telegram-codex-auth-mode*)
+                      (format t "~&[telegram] ~A~%"
+                              (cl-llm:codex-auth-status-string
+                               :model clawmacs/config:*default-model*))
+                      (when (and *telegram-llm-api-key*
+                                 (not (string= (string-trim " " *telegram-llm-api-key*) "")))
+                        (format t "~&[telegram] NOTE: *TELEGRAM-LLM-API-KEY* is set, but :CODEX-CLI uses OAuth session from `codex login`.~%"))
                       (cl-llm:make-codex-cli-client
                        :model clawmacs/config:*default-model*))
                      ((eq *telegram-llm-api-type* :anthropic)
@@ -514,15 +528,29 @@ Steps:
                       (floor (* 100 tokens) window)
                       0)))
     (telegram-send-message chan chat-id
-     (format nil
-      "📊 <b>Clawmacs Status</b>~%~%Model: <code>~A</code>~%Uptime: ~A~%Messages in history: ~A~%Token usage: ~A~%Compaction: ~A"
-      model uptime msgs
-      (if (= tracked 0)
-          (format nil "~A (estimated) / ~A (~A%%)" tokens window pct)
-          (format nil "~A / ~A (~A%%)" tokens window pct))
-      (if (and (boundp 'clawmacs/config:*compaction-enabled*)
-               clawmacs/config:*compaction-enabled*)
-          "enabled" "disabled"))
+     (if (eq *telegram-llm-api-type* :codex-cli)
+         (let* ((auth (cl-llm:codex-auth-status :model model))
+                (linked (if (getf auth :linked-session-found) "linked" "missing"))
+                (cli (if (getf auth :codex-cli-found) "found" "missing")))
+           (format nil
+            "📊 <b>Clawmacs Status</b>~%~%Model: <code>~A</code>~%Uptime: ~A~%Messages in history: ~A~%Token usage: ~A~%Compaction: ~A~%Codex CLI: ~A~%Codex OAuth session: ~A"
+            model uptime msgs
+            (if (= tracked 0)
+                (format nil "~A (estimated) / ~A (~A%%)" tokens window pct)
+                (format nil "~A / ~A (~A%%)" tokens window pct))
+            (if (and (boundp 'clawmacs/config:*compaction-enabled*)
+                     clawmacs/config:*compaction-enabled*)
+                "enabled" "disabled")
+            cli linked))
+         (format nil
+          "📊 <b>Clawmacs Status</b>~%~%Model: <code>~A</code>~%Uptime: ~A~%Messages in history: ~A~%Token usage: ~A~%Compaction: ~A"
+          model uptime msgs
+          (if (= tracked 0)
+              (format nil "~A (estimated) / ~A (~A%%)" tokens window pct)
+              (format nil "~A / ~A (~A%%)" tokens window pct))
+          (if (and (boundp 'clawmacs/config:*compaction-enabled*)
+                   clawmacs/config:*compaction-enabled*)
+              "enabled" "disabled")))
      :parse-mode "HTML")))
 
 (defun handle-cmd-help (chan chat-id)
@@ -535,9 +563,21 @@ Steps:
     "/status — Show session info (model, uptime, tokens)\n"
     "/model — Show current model\n"
     "/model &lt;name&gt; — Switch to a different model\n"
+    "/codex_auth_status — Codex CLI/OAuth diagnostics\n"
     "/help — Show this help\n\n"
     "Any other message is sent to the AI.")
    :parse-mode "HTML"))
+
+(defun handle-cmd-codex-auth-status (chan chat-id)
+  "Handle /codex_auth_status — show Codex OAuth diagnostics."
+  (if (eq *telegram-llm-api-type* :codex-cli)
+      (telegram-send-message chan chat-id
+                             (format nil "<pre>~A</pre>"
+                                     (cl-llm:codex-auth-status-string
+                                      :model clawmacs/config:*default-model*))
+                             :parse-mode "HTML")
+      (telegram-send-message chan chat-id
+                             "Codex diagnostics are relevant when `*TELEGRAM-LLM-API-TYPE*` is :CODEX-CLI.")))
 
 (defun handle-cmd-model (chan chat-id session args)
   "Handle /model [new-model-name] — show or change the current model."
@@ -598,6 +638,9 @@ Returns (values nil nil) if TEXT is not a slash command."
         ((string= cmd "model")
          (handle-cmd-model chan chat-id session args)
          t)
+        ((string= cmd "codex_auth_status")
+         (handle-cmd-codex-auth-status chan chat-id)
+         t)
         (t
          ;; Unknown command
          (telegram-send-message chan chat-id
@@ -626,6 +669,10 @@ Called on startup to populate the command menu in Telegram clients."
               (let ((ht (make-hash-table :test 'equal)))
                 (setf (gethash "command" ht) "model")
                 (setf (gethash "description" ht) "Show or change current model")
+                ht)
+              (let ((ht (make-hash-table :test 'equal)))
+                (setf (gethash "command" ht) "codex_auth_status")
+                (setf (gethash "description" ht) "Show Codex OAuth diagnostics")
                 ht)
               (let ((ht (make-hash-table :test 'equal)))
                 (setf (gethash "command" ht) "help")
