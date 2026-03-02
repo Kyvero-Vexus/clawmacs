@@ -102,7 +102,7 @@ Slots:
   ;; Runtime (nil = not connected)
   (socket           nil)
   (ssl-stream       nil)            ; raw cl+ssl stream — must be retained to prevent GC
-  (stream           nil)
+  (stream           nil)            ; flexi-stream — ALL I/O on reader thread only
   (reader-thread    nil)
   (flood-thread     nil)
   (flood-queue      '() :type list)
@@ -238,7 +238,7 @@ Returns NIL if PREFIX is NIL or doesn't contain '!' (i.e., it's a server name)."
 
 (defun %send-raw (conn line)
   "Send LINE immediately to the IRC stream, bypassing flood protection.
-Use only during initial registration. For all other sends, use IRC-ENQUEUE-RAW."
+MUST only be called from the reader/IO thread. For all other sends, use IRC-ENQUEUE-RAW."
   (let ((stream (irc-stream conn)))
     (when stream
       (handler-case (%write-raw-line stream line)
@@ -254,32 +254,34 @@ LINE should be a raw IRC command string without CRLF."
           (nconc (irc-flood-queue conn) (list line)))
     (bt:condition-notify (irc-flood-cvar conn))))
 
-(defun %flood-sender-loop (conn)
-  "Background thread: dequeues and sends IRC lines at *IRC-SEND-INTERVAL* rate.
-Runs until (irc-running-p conn) is NIL."
+(defun %drain-send-queue (conn)
+  "Drain pending lines from the flood queue, writing them to the stream.
+MUST only be called from the reader/IO thread (single-threaded I/O).
+Respects *IRC-SEND-INTERVAL* between sends. Returns number of lines sent."
   (let ((lock (irc-flood-lock conn))
-        (cvar (irc-flood-cvar conn)))
-    (loop while (irc-running-p conn)
-          do (let ((line nil))
-               ;; Wait for something to send (or a stop signal)
-               (bt:with-lock-held (lock)
-                 (loop while (and (irc-running-p conn)
-                                  (null (irc-flood-queue conn)))
-                       do (bt:condition-wait cvar lock))
-                 ;; Dequeue one line
-                 (when (irc-flood-queue conn)
-                   (setf line (first (irc-flood-queue conn)))
-                   (setf (irc-flood-queue conn) (rest (irc-flood-queue conn)))))
-               ;; Send it
-               (when line
-                 (let ((stream (irc-stream conn)))
-                   (when stream
-                     (handler-case (%write-raw-line stream line)
-                       (error (e)
-                         (format *error-output*
-                                 "~&[irc] Flood-send error: ~A~%" e)))))
-                 ;; Rate limit: sleep before next send
-                 (sleep *irc-send-interval*))))))
+        (stream (irc-stream conn))
+        (count 0))
+    (when stream
+      (loop
+        (let ((line nil))
+          (bt:with-lock-held (lock)
+            (when (irc-flood-queue conn)
+              (setf line (pop (irc-flood-queue conn)))))
+          (unless line (return count))
+          (handler-case
+              (progn
+                (%write-raw-line stream line)
+                (incf count))
+            (error (e)
+              (format *error-output* "~&[irc] Send error: ~A~%" e)
+              (return count))))))))
+
+(defun %flood-sender-loop (conn)
+  "Background thread: only exists to wake up periodically.
+Actual sending is done by the reader thread via %drain-send-queue.
+This thread is kept for API compatibility but does no I/O."
+  (loop while (irc-running-p conn)
+        do (sleep *irc-send-interval*)))
 
 ;;;; ─────────────────────────────────────────────────────────────────────────────
 ;;;; § 5. High-Level IRC Commands
@@ -624,19 +626,47 @@ Otherwise falls back to (irc-allowed-users conn)."
 ;;;; § 9. Reader Thread
 ;;;; ─────────────────────────────────────────────────────────────────────────────
 
+(defun %read-one-line (stream)
+  "Read one line from STREAM, returning it or NIL on EOF/error.
+Handles memory faults and SSL errors gracefully."
+  (handler-case (read-line stream nil nil)
+    (sb-sys:memory-fault-error (e)
+      (format *error-output* "~&[irc] Memory fault in read-line: ~A~%" e)
+      nil)
+    (cl+ssl::ssl-error (e)
+      (format *error-output* "~&[irc] SSL error in read: ~A~%" e)
+      nil)))
+
 (defun %read-loop (conn)
-  "Read and dispatch IRC lines from CONN's stream until EOF or error.
-Returns normally when the connection drops or (irc-running-p conn) is NIL."
+  "Single-threaded I/O loop: reads from IRC AND drains the send queue.
+ALL stream I/O (both read and write) happens in THIS thread only,
+eliminating concurrent access to the cl+ssl/flexi-stream which causes SIGSEGV.
+Uses usocket:wait-for-input with a short timeout to avoid blocking forever,
+allowing periodic queue draining between reads."
   (handler-case
-      (let ((stream (irc-stream conn)))
+      (let ((stream (irc-stream conn))
+            (socket (irc-socket conn)))
         (loop
           (unless (and (irc-running-p conn) stream (open-stream-p stream))
             (return))
-          (let ((raw (read-line stream nil nil)))
-            (unless raw (return))  ; EOF — server closed connection
-            (let ((line (%strip-cr raw)))
-              (when (> (length line) 0)
-                (%dispatch-line conn line))))))
+          ;; 1. Drain any pending outbound messages (single-threaded — safe)
+          (%drain-send-queue conn)
+          ;; 2. Wait for incoming data with a short timeout (100ms)
+          ;;    This allows us to loop back and drain the send queue frequently
+          (let ((ready (handler-case
+                           (usocket:wait-for-input socket :timeout 0.1 :ready-only t)
+                         (error () nil))))
+            (when ready
+              ;; Data available — read and dispatch lines
+              ;; There may be multiple lines buffered, read them all
+              (loop
+                (let ((raw (%read-one-line stream)))
+                  (unless raw (return-from %read-loop))  ; EOF
+                  (let ((line (%strip-cr raw)))
+                    (when (> (length line) 0)
+                      (%dispatch-line conn line))))
+                ;; Check if more data is buffered in the flexi-stream
+                (unless (listen stream) (return)))))))
     (error (e)
       (when (irc-running-p conn)
         (format *error-output* "~&[irc] Read error: ~A~%" e)))))
