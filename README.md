@@ -61,6 +61,8 @@ Use Telegram commands:
 - `/codex_login`
 - `/codex_link <redirect-url|code#state>`
 - `/codex_status`
+- `/models` (list grouped model options + current active model)
+- `/models set <model-id>` (validated + persisted)
 
 Stored credentials path: `~/.clawmacs/auth/codex-oauth.json` (permission `0600`).
 See [Codex OAuth setup](docs/auth/codex-oauth.md) for full flow and troubleshooting.

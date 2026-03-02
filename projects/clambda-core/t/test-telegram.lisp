@@ -274,3 +274,20 @@ Mirrors the structure of a real Telegram API update object."
   (let* ((t1 (clawmacs/telegram::%current-time-ms))
          (t2 (clawmacs/telegram::%current-time-ms)))
     (true (>= t2 t1))))
+
+;;;; ─────────────────────────────────────────────────────────────────────────────
+;;;; § 10. /models and command parsing
+;;;; ─────────────────────────────────────────────────────────────────────────────
+
+(define-test "%parse-command: keeps args with bot mention"
+  (multiple-value-bind (cmd args)
+      (clawmacs/telegram::%parse-command "/models@mybot set gpt-5.3-codex")
+    (is string= "models" cmd)
+    (is string= "set gpt-5.3-codex" args)))
+
+(define-test "%model-supported-p: known model is accepted"
+  (true (clawmacs/telegram::%model-supported-p "gpt-5.3-codex"))
+  (true (clawmacs/telegram::%model-supported-p "claude-opus-4-6")))
+
+(define-test "%model-supported-p: unknown model is rejected"
+  (false (clawmacs/telegram::%model-supported-p "totally-not-a-real-model")))

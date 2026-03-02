@@ -93,6 +93,8 @@ If you want Codex via OAuth (without API key and without `codex` CLI):
 - `/codex_login`
 - `/codex_link <redirect-url>`
 - `/codex_status`
+- `/models` (see grouped model options)
+- `/models set gpt-5.3-codex` (or another listed model)
 
 You can also verify in Lisp with `(cl-llm:codex-oauth-status-string)`.
 Full guide: [Codex OAuth](../auth/codex-oauth.md)

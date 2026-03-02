@@ -46,6 +46,19 @@ sbcl --eval '(ql:quickload :clawmacs-core)' \
 
 Your bot is now polling. Send it a message on Telegram.
 
+### Built-in Telegram commands
+
+- `/new` or `/reset` — clear chat history
+- `/status` — uptime, model, token estimates
+- `/model` — show current model
+- `/model <model-id>` — set model (validated)
+- `/models` — grouped model picker (shows current active model)
+- `/models set <model-id>` — set and persist model across restarts
+- `/codex_login`, `/codex_link`, `/codex_status` — Codex OAuth flow
+
+`/models` also includes inline quick-select buttons for common models.
+Model choice persists to `~/.clawmacs/telegram-model-state.lisp` and is loaded on startup.
+
 ---
 
 ## Configuration Reference
