@@ -2,7 +2,8 @@
 
 (in-package #:cl-llm/codex-oauth)
 
-(defvar *codex-oauth-client-id* "")
+;; OpenClaw-compatible default public OAuth client id for Codex subscription flow.
+(defvar *codex-oauth-client-id* "f0304373b74a44d2b584a3fb70ca9e56")
 (defvar *codex-oauth-authorize-endpoint* "https://auth.openai.com/oauth/authorize")
 (defvar *codex-oauth-token-endpoint* "https://auth.openai.com/oauth/token")
 (defvar *codex-oauth-redirect-uri* "https://localhost/callback")
