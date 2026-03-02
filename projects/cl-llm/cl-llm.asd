@@ -9,7 +9,10 @@
                "com.inuoe.jzon"
                "alexandria"
                "cl-ppcre"
-               "quri")
+               "quri"
+               "ironclad"
+               "babel"
+               "cl-base64")
   :serial t
   :components ((:file "src/packages")
                (:file "src/conditions")

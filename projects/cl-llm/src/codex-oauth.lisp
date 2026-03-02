@@ -3,10 +3,10 @@
 (in-package #:cl-llm/codex-oauth)
 
 ;; OpenClaw-compatible default public OAuth client id for Codex subscription flow.
-(defvar *codex-oauth-client-id* "f0304373b74a44d2b584a3fb70ca9e56")
+(defvar *codex-oauth-client-id* "app_EMoamEEZ73f0CkXaXp7hrann")
 (defvar *codex-oauth-authorize-endpoint* "https://auth.openai.com/oauth/authorize")
 (defvar *codex-oauth-token-endpoint* "https://auth.openai.com/oauth/token")
-(defvar *codex-oauth-redirect-uri* "https://localhost/callback")
+(defvar *codex-oauth-redirect-uri* "http://localhost:1455/auth/callback")
 (defvar *codex-oauth-scope* "openid profile email offline_access")
 (defvar *codex-oauth-store-path*
   (merge-pathnames ".clawmacs/auth/codex-oauth.json" (user-homedir-pathname)))
@@ -18,6 +18,17 @@
         (s (make-string len)))
     (dotimes (i len s)
       (setf (char s i) (char alphabet (random (length alphabet)))))))
+(defun %base64url-no-pad (octets)
+  (let* ((b64 (cl-base64:usb8-array-to-base64-string octets))
+         (s1 (substitute #\- #\+ b64))
+         (s2 (substitute #\_ #\/ s1)))
+    (string-right-trim "=" s2)))
+
+(defun %pkce-s256-challenge (verifier)
+  (let* ((bytes (babel:string-to-octets verifier :encoding :utf-8))
+         (digest (ironclad:digest-sequence :sha256 bytes)))
+    (%base64url-no-pad digest)))
+
 
 (defun %read-json-file (path)
   (when (probe-file path)
@@ -108,8 +119,11 @@
                      ("redirect_uri" . ,*codex-oauth-redirect-uri*)
                      ("scope" . ,*codex-oauth-scope*)
                      ("state" . ,state)
-                     ("code_challenge" . ,verifier)
-                     ("code_challenge_method" . "plain")))
+                     ("code_challenge" . ,(%pkce-s256-challenge verifier))
+                     ("code_challenge_method" . "S256")
+                     ("id_token_add_organizations" . "true")
+                     ("codex_cli_simplified_flow" . "true")
+                     ("originator" . "pi")))
            (auth-url (format nil "~A?~A" *codex-oauth-authorize-endpoint* (quri:url-encode-params params))))
       (list :auth-url auth-url
             :state state
