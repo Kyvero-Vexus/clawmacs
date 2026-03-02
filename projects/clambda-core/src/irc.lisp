@@ -326,9 +326,12 @@ Sets irc-socket and irc-stream slots. On failure, leaves them NIL."
                (element-type (if tls-p '(unsigned-byte 8) 'character))
                (socket (usocket:socket-connect host port :element-type element-type))
                (tcp-stream (usocket:socket-stream socket))
-               (io-stream  (if tls-p
+               (raw-stream (if tls-p
                                (cl+ssl:make-ssl-client-stream tcp-stream :hostname host)
-                               tcp-stream)))
+                               tcp-stream))
+               (io-stream  (if tls-p
+                               (flexi-streams:make-flexi-stream raw-stream :external-format :utf-8)
+                               raw-stream)))
           (setf (irc-socket conn) socket
                 (irc-stream conn) io-stream)
           ;; Send NICK/USER immediately (before flood thread loop can run)

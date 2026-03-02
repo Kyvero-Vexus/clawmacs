@@ -31,6 +31,7 @@
                ;; Layer 6c: IRC raw socket + TLS
                "usocket"
                "cl+ssl"
+               "flexi-streams"
                ;; Layer 9 (P0): SWANK/SLIME server for live inspection
                "swank")
   :serial t
