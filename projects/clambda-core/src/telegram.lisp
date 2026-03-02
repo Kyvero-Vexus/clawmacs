@@ -94,6 +94,17 @@ Default 500ms = at most 2 edits/second.")
      :models ("local/qwen2.5-7b" "local/llama3.1-8b" "google/gemma-3-12b")))
   "Curated model catalog shown by /models.")
 
+(defparameter *telegram-codex-only-model-catalog*
+  '((:provider "OpenAI Codex OAuth"
+     :models ("gpt-5.3-codex" "gpt-5-codex" "gpt-5-mini")))
+  "Safe model catalog when Telegram is running in :CODEX-OAUTH mode.")
+
+(defun %active-model-catalog ()
+  (if (eq *telegram-llm-api-type* :codex-oauth)
+      *telegram-codex-only-model-catalog*
+      *telegram-model-catalog*))
+
+
 ;;;; ─────────────────────────────────────────────────────────────────────────────
 ;;;; § 2. Channel Struct
 ;;;; ─────────────────────────────────────────────────────────────────────────────
@@ -515,7 +526,7 @@ Steps:
   "Universal time when the Telegram bot was started.")
 
 (defun %all-supported-models ()
-  (loop for entry in *telegram-model-catalog*
+  (loop for entry in (%active-model-catalog)
         append (getf entry :models)))
 
 (defun %model-supported-p (model-id)
@@ -539,6 +550,21 @@ Steps:
         (format *error-output* "~&[telegram] Failed loading model state ~A: ~A~%"
                 (namestring *telegram-model-state-path*) e)))))
 
+(defun %enforce-codex-safe-profile ()
+  "Harden Telegram runtime for :CODEX-OAUTH deployments."
+  (when (eq *telegram-llm-api-type* :codex-oauth)
+    ;; Disable cross-provider fallback chain that can leak unavailable model/provider errors.
+    (setf clawmacs/config:*fallback-models* nil)
+    ;; Prefer best supported Codex OAuth model.
+    (unless (%model-supported-p clawmacs/config:*default-model*)
+      (setf clawmacs/config:*default-model* "gpt-5.3-codex"))
+    ;; Force safe default if persisted state is a non-codex model.
+    (unless (member clawmacs/config:*default-model*
+                    '("gpt-5.3-codex" "gpt-5-codex" "gpt-5-mini")
+                    :test #'string=)
+      (setf clawmacs/config:*default-model* "gpt-5.3-codex"))
+    (setf cl-llm:*codex-oauth-fallback-enabled* nil)))
+
 (defun %set-telegram-model! (session model-id)
   (setf clawmacs/config:*default-model* model-id)
   (let* ((agent (clawmacs/session:session-agent session))
@@ -554,19 +580,16 @@ Steps:
   "Usage:\n/models — show grouped model list\n/models set &lt;model-id&gt; — set active model\n\nExample:\n/models set gpt-5.3-codex")
 
 (defun %build-models-inline-keyboard ()
-  (let ((rows (vector
-               (vector (let ((b (make-hash-table :test 'equal)))
-                         (setf (gethash "text" b) "gpt-5.3-codex")
-                         (setf (gethash "callback_data" b) "models:set:gpt-5.3-codex") b)
-                       (let ((b (make-hash-table :test 'equal)))
-                         (setf (gethash "text" b) "claude-opus-4-6")
-                         (setf (gethash "callback_data" b) "models:set:claude-opus-4-6") b))
-               (vector (let ((b (make-hash-table :test 'equal)))
-                         (setf (gethash "text" b) "anthropic/claude-sonnet-4")
-                         (setf (gethash "callback_data" b) "models:set:anthropic/claude-sonnet-4") b)
-                       (let ((b (make-hash-table :test 'equal)))
-                         (setf (gethash "text" b) "google/gemma-3-4b")
-                         (setf (gethash "callback_data" b) "models:set:google/gemma-3-4b") b)))))
+  (let* ((models (%all-supported-models))
+         (rows (make-array 0 :adjustable t :fill-pointer 0)))
+    (loop for i from 0 below (length models) by 2
+          do (let ((row (make-array 0 :adjustable t :fill-pointer 0)))
+               (dolist (model (subseq models i (min (+ i 2) (length models))))
+                 (let ((b (make-hash-table :test 'equal)))
+                   (setf (gethash "text" b) model)
+                   (setf (gethash "callback_data" b) (format nil "models:set:~A" model))
+                   (vector-push-extend b row)))
+               (vector-push-extend row rows)))
     (let ((markup (make-hash-table :test 'equal)))
       (setf (gethash "inline_keyboard" markup) rows)
       markup)))
@@ -575,7 +598,7 @@ Steps:
   (with-output-to-string (out)
     (format out "🧠 <b>Model Selection</b>~%")
     (format out "Current: <code>~A</code>~2%" clawmacs/config:*default-model*)
-    (dolist (entry *telegram-model-catalog*)
+    (dolist (entry (%active-model-catalog))
       (format out "<b>~A</b>~%" (getf entry :provider))
       (dolist (model (getf entry :models))
         (format out "• <code>~A</code>~A~%"
@@ -647,10 +670,12 @@ Steps:
        ((eq *telegram-llm-api-type* :codex-oauth)
         (let* ((auth (cl-llm:codex-oauth-status))
                (linked (if (getf auth :linked) "linked" "missing"))
-               (expired (if (getf auth :expired) "yes" "no")))
+               (expired (if (getf auth :expired) "yes" "no"))
+               (transport (or cl-llm:*codex-oauth-last-transport* :uninitialized))
+               (transport-error (or cl-llm:*codex-oauth-last-transport-error* "none")))
           (format nil
-                  "📊 <b>Clawmacs Status</b>~%~%Model: <code>~A</code>~%Uptime: ~A~%Messages in history: ~A~%Token usage: ~A~%Compaction: ~A~%Codex OAuth linked: ~A~%Token expired: ~A~%Runtime bridge fallback: ~A"
-                  model uptime msgs
+                  "📊 <b>Clawmacs Status</b>~%~%Backend: <code>~A</code>~%Model: <code>~A</code>~%Uptime: ~A~%Messages in history: ~A~%Token usage: ~A~%Compaction: ~A~%Codex OAuth linked: ~A~%Token expired: ~A~%Runtime bridge fallback: ~A~%Last transport: <code>~A</code>~%Last transport error: <code>~A</code>"
+                  *telegram-llm-api-type* model uptime msgs
                   (if (= tracked 0)
                       (format nil "~A (estimated) / ~A (~A%%)" tokens window pct)
                       (format nil "~A / ~A (~A%%)" tokens window pct))
@@ -658,7 +683,8 @@ Steps:
                            clawmacs/config:*compaction-enabled*)
                       "enabled" "disabled")
                   linked expired
-                  (if cl-llm:*codex-oauth-fallback-enabled* "enabled" "disabled"))))
+                  (if cl-llm:*codex-oauth-fallback-enabled* "enabled" "disabled")
+                  transport transport-error)))
        (t
         (format nil
                 "📊 <b>Clawmacs Status</b>~%~%Model: <code>~A</code>~%Uptime: ~A~%Messages in history: ~A~%Token usage: ~A~%Compaction: ~A"
@@ -1062,6 +1088,7 @@ Returns CHAN."
   (setf (telegram-channel-running chan) t)
   (setf *bot-start-time* (get-universal-time))
   (load-persisted-telegram-model)
+  (%enforce-codex-safe-profile)
   ;; Register slash commands with Telegram
   (%register-bot-commands chan)
   (setf (telegram-channel-thread chan)

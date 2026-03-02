@@ -2,8 +2,15 @@
 
 (in-package #:cl-llm/codex-oauth-bridge)
 
-(defvar *codex-oauth-fallback-enabled* t
+(defvar *codex-oauth-fallback-enabled* nil
   "When true, :codex-oauth runtime falls back to Claude CLI if Node OAuth bridge fails.")
+
+(defvar *codex-oauth-last-transport* :uninitialized
+  "Last transport path used by codex-oauth bridge.
+One of: :helper, :fallback, :error, :uninitialized.")
+
+(defvar *codex-oauth-last-transport-error* nil
+  "String description of last codex-oauth bridge transport error (or NIL).")
 
 (defvar *codex-oauth-node-helper*
   (merge-pathnames "node/codex_oauth_helper.mjs"
@@ -74,20 +81,28 @@
 Primary path: Node helper using @mariozechner/pi-ai openai-codex OAuth runtime.
 Secondary fallback (optional): Claude CLI with explicit warning."
   (handler-case
-      (%helper-response->completion
-       (%run-node-helper (%messages->bridge-payload messages system-prompt max-tokens))
-       model)
+      (let ((response (%helper-response->completion
+                       (%run-node-helper (%messages->bridge-payload messages system-prompt max-tokens))
+                       model)))
+        (setf *codex-oauth-last-transport* :helper
+              *codex-oauth-last-transport-error* nil)
+        response)
     (error (e)
-      (if (not *codex-oauth-fallback-enabled*)
-          (error "Codex OAuth runtime failed: ~A" e)
-          (let* ((warning (format nil
-                                  "Codex OAuth primary runtime failed (~A). Using Claude CLI fallback for this response. Re-run /codex_login + /codex_link and retry."
-                                  e))
-                 (fallback (cl-llm/claude-cli:claude-cli-chat messages
-                                                               :model cl-llm/claude-cli:*claude-cli-default-model*
-                                                               :system-prompt system-prompt
-                                                               :max-tokens max-tokens)))
-            (%prepend-warning-to-response fallback warning))))))
+      (let ((err-text (princ-to-string e)))
+        (setf *codex-oauth-last-transport-error* err-text)
+        (if (not *codex-oauth-fallback-enabled*)
+            (progn
+              (setf *codex-oauth-last-transport* :error)
+              (error "Codex OAuth runtime failed (~A). Runtime fallback is disabled for safety in this deployment." err-text))
+            (let* ((warning (format nil
+                                    "Codex OAuth primary runtime failed (~A). Using Claude CLI fallback for this response. Re-run /codex_login + /codex_link and retry."
+                                    err-text))
+                   (fallback (cl-llm/claude-cli:claude-cli-chat messages
+                                                                 :model cl-llm/claude-cli:*claude-cli-default-model*
+                                                                 :system-prompt system-prompt
+                                                                 :max-tokens max-tokens)))
+              (setf *codex-oauth-last-transport* :fallback)
+              (%prepend-warning-to-response fallback warning)))))))
 
 (defun codex-oauth-bridge-chat-stream (messages callback &key model system-prompt max-tokens)
   (let* ((response (codex-oauth-bridge-chat messages

@@ -65,8 +65,8 @@ Requires the codex CLI to be installed and authenticated via:
   "Create a client that uses browser-link OAuth state with a subscription bridge runtime.
 
 Runtime path does NOT call api.openai.com /chat/completions.
-Primary transport is Codex CLI subscription path; interim fallback is Claude CLI
-with an explicit warning."
+Primary transport is the Node Codex OAuth helper bridge; runtime fallback is disabled by default
+for deployment safety (can be enabled explicitly via *CODEX-OAUTH-FALLBACK-ENABLED*)."
   (%make-client
    :base-url base-url
    :api-key  "oauth"

@@ -197,6 +197,8 @@
                 #:choice-message)
   (:export
    #:*codex-oauth-fallback-enabled*
+   #:*codex-oauth-last-transport*
+   #:*codex-oauth-last-transport-error*
    #:codex-oauth-bridge-chat
    #:codex-oauth-bridge-chat-stream))
 
@@ -219,7 +221,9 @@
                 #:codex-oauth-start #:codex-oauth-complete #:codex-oauth-refresh
                 #:codex-oauth-access-token #:codex-oauth-status #:codex-oauth-status-string)
   (:import-from #:cl-llm/codex-oauth-bridge
-                #:*codex-oauth-fallback-enabled*)
+                #:*codex-oauth-fallback-enabled*
+                #:*codex-oauth-last-transport*
+                #:*codex-oauth-last-transport-error*)
   (:import-from #:cl-llm/protocol
                 #:message #:system-message #:user-message
                 #:assistant-message #:tool-message
@@ -258,6 +262,7 @@
    #:codex-oauth-start #:codex-oauth-complete #:codex-oauth-refresh #:codex-oauth-access-token
    #:codex-oauth-status #:codex-oauth-status-string
    #:*codex-oauth-fallback-enabled*
+   #:*codex-oauth-last-transport* #:*codex-oauth-last-transport-error*
    #:chat #:chat-stream #:simple-chat #:with-client
    ;; Messages
    #:message #:system-message #:user-message

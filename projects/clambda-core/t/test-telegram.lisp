@@ -211,6 +211,35 @@ Mirrors the structure of a real Telegram API update object."
     (process-update chan update)
     (is = 0 (hash-table-count (clawmacs/telegram::telegram-channel-sessions chan)))))
 
+(define-test "process-update: chat turn routes through telegram handler path"
+  (let* ((chan (make-telegram-channel :token "T"))
+         (update (%make-update 77 :text "hello e2e" :chat-id 999 :user-id 111 :first-name "Sim"))
+         (sent '())
+         (old-send (symbol-function 'clawmacs/telegram:telegram-send-message))
+         (old-action (symbol-function 'clawmacs/telegram::telegram-send-chat-action))
+         (old-run (symbol-function 'clawmacs/loop:run-agent))
+         (old-stream clawmacs/telegram:*telegram-streaming*))
+    (unwind-protect
+         (progn
+           (setf clawmacs/telegram:*telegram-streaming* nil)
+           (setf (symbol-function 'clawmacs/telegram:telegram-send-message)
+                 (lambda (c chat-id text &key parse-mode reply-markup)
+                   (declare (ignore c parse-mode reply-markup))
+                   (push (list chat-id text) sent)
+                   nil))
+           (setf (symbol-function 'clawmacs/telegram::telegram-send-chat-action)
+                 (lambda (&rest args) (declare (ignore args)) nil))
+           (setf (symbol-function 'clawmacs/loop:run-agent)
+                 (lambda (session text &key options)
+                   (declare (ignore session options))
+                   (format nil "E2E-OK: ~A" text)))
+           (process-update chan update)
+           (true (find "E2E-OK: hello e2e" sent :key #'second :test #'string=)))
+      (setf (symbol-function 'clawmacs/telegram:telegram-send-message) old-send
+            (symbol-function 'clawmacs/telegram::telegram-send-chat-action) old-action
+            (symbol-function 'clawmacs/loop:run-agent) old-run
+            clawmacs/telegram:*telegram-streaming* old-stream))))
+
 ;;;; ─────────────────────────────────────────────────────────────────────────────
 ;;;; § 7. Streaming configuration
 ;;;; ─────────────────────────────────────────────────────────────────────────────
@@ -291,3 +320,18 @@ Mirrors the structure of a real Telegram API update object."
 
 (define-test "%model-supported-p: unknown model is rejected"
   (false (clawmacs/telegram::%model-supported-p "totally-not-a-real-model")))
+
+(define-test "%active-model-catalog: codex-oauth mode hides non-codex models"
+  (let ((clawmacs/telegram:*telegram-llm-api-type* :codex-oauth))
+    (false (clawmacs/telegram::%model-supported-p "claude-opus-4-6"))
+    (true (clawmacs/telegram::%model-supported-p "gpt-5.3-codex"))))
+
+(define-test "%enforce-codex-safe-profile: resets model and disables fallbacks"
+  (let ((clawmacs/telegram:*telegram-llm-api-type* :codex-oauth)
+        (clawmacs/config:*default-model* "anthropic/claude-sonnet-4")
+        (clawmacs/config:*fallback-models* '("google/gemma-3-4b"))
+        (cl-llm:*codex-oauth-fallback-enabled* t))
+    (clawmacs/telegram::%enforce-codex-safe-profile)
+    (is string= "gpt-5.3-codex" clawmacs/config:*default-model*)
+    (is equal nil clawmacs/config:*fallback-models*)
+    (false cl-llm:*codex-oauth-fallback-enabled*)))

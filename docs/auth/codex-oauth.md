@@ -6,7 +6,7 @@ Clawmacs keeps `/codex_login` + `/codex_link` browser OAuth UX, but runtime no l
 
 For `:codex-oauth` requests:
 1. Primary: **Node OAuth helper** (`projects/cl-llm/node/codex_oauth_helper.mjs`) using `@mariozechner/pi-ai` `openai-codex-responses` runtime.
-2. Secondary fallback (optional): Claude CLI transport with explicit warning in the model reply.
+2. Secondary fallback (optional): Claude CLI transport with explicit warning in the model reply (disabled by default).
 
 Primary runtime is non-CLI Codex OAuth (no `codex` binary required) and avoids direct `api.openai.com/v1/chat/completions` API-key quota/billing path.
 
@@ -17,7 +17,7 @@ Primary runtime is non-CLI Codex OAuth (no `codex` binary required) and avoids d
 
 (setf clawmacs/telegram:*telegram-llm-api-type* :codex-oauth)
 (setf cl-llm:*codex-oauth-client-id* "YOUR_OAUTH_CLIENT_ID")
-(setf *default-model* "gpt-5-codex")
+(setf *default-model* "gpt-5.3-codex")
 ```
 
 Optional: disable interim fallback (strict mode)
@@ -38,6 +38,7 @@ Optional: disable interim fallback (strict mode)
 
 - Streaming for `:codex-oauth` bridge currently emits final text as one chunk.
 - If Node helper runtime fails and fallback is enabled, response is prefixed with a warning.
+- `/status` includes backend + last transport path (`helper` / `fallback` / `error`) and last transport error.
 - Helper reads/writes `~/.clawmacs/auth/codex-oauth.json` (and refreshes token when needed).
 
 ## Troubleshooting
