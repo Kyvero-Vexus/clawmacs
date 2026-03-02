@@ -273,14 +273,19 @@ Tools:   builtin registry (exec, read_file, write_file, list_dir, web_fetch, tts
 Prompt:  dynamically built by BUILD-TELEGRAM-SYSTEM-PROMPT (workspace files + tool listing).
 
 Users can override any of these vars in init.lisp before starting the channel."
-  (let* ((client   (if (eq *telegram-llm-api-type* :anthropic)
-                       (cl-llm:make-anthropic-client
-                        :api-key *telegram-llm-api-key*
-                        :model   clawmacs/config:*default-model*)
-                       (cl-llm:make-client
-                        :base-url *telegram-llm-base-url*
-                        :api-key  *telegram-llm-api-key*
-                        :model    clawmacs/config:*default-model*)))
+  (let* ((client   (cond
+                     ((eq *telegram-llm-api-type* :claude-cli)
+                      (cl-llm:make-claude-cli-client
+                       :model clawmacs/config:*default-model*))
+                     ((eq *telegram-llm-api-type* :anthropic)
+                      (cl-llm:make-anthropic-client
+                       :api-key *telegram-llm-api-key*
+                       :model   clawmacs/config:*default-model*))
+                     (t
+                      (cl-llm:make-client
+                       :base-url *telegram-llm-base-url*
+                       :api-key  *telegram-llm-api-key*
+                       :model    clawmacs/config:*default-model*))))
          (registry (clawmacs/builtins:make-builtin-registry))
          (prompt   (%build-telegram-system-prompt registry)))
     (clawmacs/agent:make-agent

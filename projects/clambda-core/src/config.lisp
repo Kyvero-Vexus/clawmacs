@@ -116,6 +116,11 @@ E.g. 0.75 means compact when 75% of the context window is consumed.")
   :doc "Number of recent message *pairs* (user+assistant) to always keep verbatim
 during context compaction. Overrides *context-compaction-keep-last-messages* when set.")
 
+(defoption *default-max-tokens* 8192
+  :type integer
+  :doc "Default max_tokens sent with LLM requests. Lower values reduce cost.
+The old default of 65536 caused HTTP 402 credit exhaustion on OpenRouter.")
+
 (defoption *default-stream* nil
   :type boolean
   :doc "If T, use streaming mode by default for LLM calls.")

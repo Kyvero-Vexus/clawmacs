@@ -10,7 +10,7 @@
   (api-key         "not-needed" :type string)
   (model           nil :type (or null string))
   (default-options nil)   ; instance of request-options or nil
-  (api-type        :openai :type (member :openai :anthropic)))
+  (api-type        :openai :type (member :openai :anthropic :claude-cli)))
 
 (defun make-client (&key base-url api-key model default-options (api-type :openai))
   "Create a new LLM client.
@@ -19,14 +19,32 @@ BASE-URL is the endpoint root, e.g. \"http://localhost:11434/v1\".
 API-KEY defaults to \"not-needed\" (suitable for local models).
 MODEL is the default model name.
 DEFAULT-OPTIONS is an optional REQUEST-OPTIONS struct.
-API-TYPE is :OPENAI (default) or :ANTHROPIC."
-  (assert base-url () "BASE-URL is required")
+API-TYPE is :OPENAI (default), :ANTHROPIC, or :CLAUDE-CLI."
+  (assert (or base-url (eq api-type :claude-cli)) ()
+          "BASE-URL is required (unless api-type is :claude-cli)")
   (%make-client
-   :base-url        (string-right-trim "/" base-url)
+   :base-url        (if base-url
+                        (string-right-trim "/" base-url)
+                        "cli://claude")
    :api-key         (or api-key "not-needed")
    :model           model
    :default-options default-options
    :api-type        api-type))
+
+(defun make-claude-cli-client (&key model)
+  "Create a client that routes calls through the claude CLI (OAuth auth).
+
+MODEL — default model, e.g. \"claude-opus-4-6\".
+
+This client does NOT make HTTP requests. It shells out to:
+  env -u ANTHROPIC_API_KEY claude --print --model MODEL --output-format json -p PROMPT
+
+Requires the claude CLI to be installed and authenticated via claude.ai OAuth."
+  (%make-client
+   :base-url "cli://claude"
+   :api-key  "not-needed"
+   :model    model
+   :api-type :claude-cli))
 
 (defun make-anthropic-client (&key api-key model)
   "Create a client configured for the Anthropic Messages API.
@@ -83,22 +101,37 @@ TOOLS — list of TOOL-DEFINITION structs (optional).
 Returns a COMPLETION-RESPONSE."
   (let* ((api-type        (client-api-type client))
          (effective-model (or model (client-model client)))
-         (effective-opts  (effective-options client options))
-         (anthropic-p     (eq api-type :anthropic))
-         (request-ht      (if anthropic-p
-                              (cl-llm/protocol::build-anthropic-request-ht
-                               effective-model messages effective-opts tools)
-                              (cl-llm/protocol::build-request-ht
-                               effective-model messages effective-opts tools)))
-         (body-str        (com.inuoe.jzon:stringify request-ht))
-         (response-str    (cl-llm/http:post-json
-                           (chat-url client)
-                           (client-api-key client)
-                           body-str
-                           :anthropic-p anthropic-p)))
-    (if anthropic-p
-        (cl-llm/protocol::parse-anthropic-response response-str)
-        (cl-llm/protocol::parse-response response-str))))
+         (effective-opts  (effective-options client options)))
+
+    ;; Dispatch to claude CLI backend
+    (when (eq api-type :claude-cli)
+      (when tools
+        (format *error-output*
+                "~&[cl-llm/client] WARNING: tool calling not supported in :claude-cli mode — tools ignored~%"))
+      (return-from chat
+        (cl-llm/claude-cli:claude-cli-chat
+         messages
+         :model         effective-model
+         :system-prompt nil   ; extracted from messages inside claude-cli-chat
+         :max-tokens    (when effective-opts
+                          (cl-llm/protocol:request-options-max-tokens effective-opts)))))
+
+    ;; HTTP backends (:openai / :anthropic)
+    (let* ((anthropic-p  (eq api-type :anthropic))
+           (request-ht   (if anthropic-p
+                             (cl-llm/protocol::build-anthropic-request-ht
+                              effective-model messages effective-opts tools)
+                             (cl-llm/protocol::build-request-ht
+                              effective-model messages effective-opts tools)))
+           (body-str     (com.inuoe.jzon:stringify request-ht))
+           (response-str (cl-llm/http:post-json
+                          (chat-url client)
+                          (client-api-key client)
+                          body-str
+                          :anthropic-p anthropic-p)))
+      (if anthropic-p
+          (cl-llm/protocol::parse-anthropic-response response-str)
+          (cl-llm/protocol::parse-response response-str)))))
 
 ;;; ── Streaming chat ───────────────────────────────────────────────────────────
 
@@ -109,41 +142,56 @@ Returns a COMPLETION-RESPONSE."
 CALLBACK is called with each TEXT-DELTA string as it arrives.
 Returns the full accumulated text string when done."
   (let* ((api-type        (client-api-type client))
-         (anthropic-p     (eq api-type :anthropic))
          (effective-model (or model (client-model client)))
-         (effective-opts  (effective-options client options))
-         (request-ht      (if anthropic-p
-                              (cl-llm/protocol::build-anthropic-request-ht
-                               effective-model messages effective-opts tools)
-                              (cl-llm/protocol::build-request-ht
-                               effective-model messages effective-opts tools)))
-         ;; Add stream:true
-         (_ (setf (gethash "stream" request-ht) t))
-         (body-str        (com.inuoe.jzon:stringify request-ht))
-         (accumulated     (make-string-output-stream)))
-    (declare (ignore _))
-    (cl-llm/http:post-json-stream
-     (chat-url client)
-     (client-api-key client)
-     body-str
-     (lambda (line)
-       (if anthropic-p
-           (cl-llm/streaming:parse-anthropic-sse-line
-            line
-            (lambda (delta)
-              (when delta
-                (write-string delta accumulated)
-                (when callback
-                  (funcall callback delta)))))
-           (cl-llm/streaming:parse-sse-line
-            line
-            (lambda (delta)
-              (when delta
-                (write-string delta accumulated)
-                (when callback
-                  (funcall callback delta)))))))
-     :anthropic-p anthropic-p)
-    (get-output-stream-string accumulated)))
+         (effective-opts  (effective-options client options)))
+
+    ;; Dispatch to claude CLI backend (non-streaming: callback called once)
+    (when (eq api-type :claude-cli)
+      (when tools
+        (format *error-output*
+                "~&[cl-llm/client] WARNING: tool calling not supported in :claude-cli mode — tools ignored~%"))
+      (return-from chat-stream
+        (cl-llm/claude-cli:claude-cli-chat-stream
+         messages callback
+         :model         effective-model
+         :system-prompt nil
+         :max-tokens    (when effective-opts
+                          (cl-llm/protocol:request-options-max-tokens effective-opts)))))
+
+    ;; HTTP backends (:openai / :anthropic)
+    (let* ((anthropic-p     (eq api-type :anthropic))
+           (request-ht      (if anthropic-p
+                                (cl-llm/protocol::build-anthropic-request-ht
+                                 effective-model messages effective-opts tools)
+                                (cl-llm/protocol::build-request-ht
+                                 effective-model messages effective-opts tools)))
+           ;; Add stream:true
+           (_ (setf (gethash "stream" request-ht) t))
+           (body-str        (com.inuoe.jzon:stringify request-ht))
+           (accumulated     (make-string-output-stream)))
+      (declare (ignore _))
+      (cl-llm/http:post-json-stream
+       (chat-url client)
+       (client-api-key client)
+       body-str
+       (lambda (line)
+         (if anthropic-p
+             (cl-llm/streaming:parse-anthropic-sse-line
+              line
+              (lambda (delta)
+                (when delta
+                  (write-string delta accumulated)
+                  (when callback
+                    (funcall callback delta)))))
+             (cl-llm/streaming:parse-sse-line
+              line
+              (lambda (delta)
+                (when delta
+                  (write-string delta accumulated)
+                  (when callback
+                    (funcall callback delta)))))))
+       :anthropic-p anthropic-p)
+      (get-output-stream-string accumulated))))
 
 ;;; ── Convenience ──────────────────────────────────────────────────────────────
 

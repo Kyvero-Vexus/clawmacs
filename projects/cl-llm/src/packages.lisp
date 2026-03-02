@@ -64,6 +64,8 @@
    ;; Request options
    #:request-options
    #:make-request-options
+   #:request-options-max-tokens
+   #:request-options-temperature
    ;; Response
    #:completion-response
    #:response-id
@@ -104,6 +106,7 @@
    #:client
    #:make-client
    #:make-anthropic-client
+   #:make-claude-cli-client
    #:client-base-url
    #:client-api-key
    #:client-model
@@ -141,11 +144,23 @@
    #:make-tool-result-message
    #:tool-schema))
 
+(defpackage #:cl-llm/claude-cli
+  (:use #:cl)
+  (:import-from #:cl-llm/protocol
+                #:message-role #:message-content
+                #:assistant-message
+                #:response-choices #:choice-message)
+  (:export
+   #:*claude-cli-path*
+   #:*claude-cli-default-model*
+   #:claude-cli-chat
+   #:claude-cli-chat-stream))
+
 ;; Top-level convenience package
 (defpackage #:cl-llm
   (:use #:cl)
   (:import-from #:cl-llm/client
-                #:client #:make-client #:make-anthropic-client
+                #:client #:make-client #:make-anthropic-client #:make-claude-cli-client
                 #:client-base-url #:client-api-key #:client-model #:client-api-type
                 #:chat #:chat-stream #:simple-chat #:with-client)
   (:import-from #:cl-llm/protocol
@@ -177,7 +192,7 @@
                 #:stream-to-string)
   (:export
    ;; Client
-   #:client #:make-client #:make-anthropic-client
+   #:client #:make-client #:make-anthropic-client #:make-claude-cli-client
    #:client-base-url #:client-api-key #:client-model #:client-api-type
    #:chat #:chat-stream #:simple-chat #:with-client
    ;; Messages
