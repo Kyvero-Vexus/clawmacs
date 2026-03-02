@@ -1,258 +1,67 @@
 # Architecture Overview
 
-Clawmacs is built in layers. Each layer builds on the one below it. You can use
-any layer in isolation.
+Clawmacs is layered. Each layer builds on lower layers.
 
-## System Dependency Graph
+## Dependency shape
 
-```
+```text
                     clawmacs-gui (Layer 3)
                          │
-                         │ :depends-on
                          ▼
                   clawmacs-core (Layer 2b)
-                         │
-              ┌──────────┴───────────┐
-              │                      │
-              ▼                      │
-           cl-llm (Layer 1)          cl-tui (Layer 2a, standalone)
-              │
-              ▼
-      Quicklisp libraries:
-      dexador, jzon,
-      alexandria, cl-ppcre,
-      usocket, cl+ssl,
-      hunchentoot, parachute
+                    │             │
+                    │             └── cl-tui (Layer 2a)
+                    ▼
+                 cl-llm (Layer 1)
 ```
 
-**Build order:** `cl-llm` → `cl-tui` (standalone) | `clawmacs-core` → `clawmacs-gui`
+Core Quicklisp/runtime dependencies include: `dexador`, `jzon`, `alexandria`,
+`cl-ppcre`, `usocket`, `cl+ssl`, `hunchentoot`, `bordeaux-threads`.
 
----
+## Layer 1: cl-llm
 
-## Layer 1: cl-llm — LLM API Client
+OpenAI-compatible chat client with streaming and tool-call payload support.
 
-**Purpose:** Talk to any OpenAI-compatible API (LM Studio, Ollama, OpenRouter).
+## Layer 2a: cl-tui
 
-**Key capabilities:**
-- Non-streaming chat (`cl-llm:chat`)
-- Streaming SSE chat (`cl-llm:chat-stream`)
-- Tool definitions (JSON schema format)
-- Automatic retry with exponential backoff (3 retries, 1/2/4s)
-- Supports: LM Studio, Ollama (v1 endpoint), OpenRouter, any OpenAI-compat server
+Terminal chat interface (ASDF system: `cl-tui`).
 
-**Main entry points:**
+## Layer 2b: clawmacs-core
 
-```lisp
-;; Create a client
-(cl-llm:make-client
-  :base-url "http://192.168.1.189:1234/v1"
-  :api-key  "lmstudio"
-  :model    "google/gemma-3-4b")
+Agent runtime: sessions, tool registry, built-in tools, channels, hooks,
+subagents, HTTP API, configuration loader.
 
-;; Non-streaming: returns full response string
-(cl-llm:chat client messages)
+Source tree path in this repo is currently:
 
-;; Streaming: calls callback per token, returns full string
-(cl-llm:chat-stream client messages
-                    (lambda (delta) (write-string delta) (force-output)))
-```
+- `projects/clambda-core/` (directory)
+- `clawmacs-core` (ASDF system name)
 
----
+## Layer 3: clawmacs-gui
 
-## Layer 2a: cl-tui — Terminal Chat UI
+Optional McCLIM frontend.
 
-**Purpose:** A simple ANSI terminal chat interface using `cl-llm`. Standalone.
+Source tree path in this repo is currently:
 
-```lisp
-(cl-tui:run :model "google/gemma-3-4b")
-```
+- `projects/clambda-gui/` (directory)
+- `clawmacs-gui` (ASDF system name)
 
-Slash commands: `/model`, `/system`, `/clear`, `/quit`
+## Runtime flow (high-level)
 
-Single-threaded. Does not use clawmacs-core (direct `cl-llm` usage).
+1. Inbound message arrives (CLI/channel/API)
+2. Session history updated
+3. LLM call performed
+4. Tool calls dispatched if requested
+5. Tool results appended and loop continues
+6. Final assistant response emitted
 
----
+## Extension points
 
-## Layer 2b: clawmacs-core — Agent Platform
+- Register custom tools
+- Add hooks (`*after-init-hook*`, `*before-agent-turn-hook*`, etc.)
+- Register channels
+- Start management API for remote control
 
-**Purpose:** The core agent platform. Multi-turn tool-calling agent loop, channels,
-session persistence, memory loading, sub-agents.
+## Status
 
-### Sub-modules
-
-| Module | Purpose |
-|--------|---------|
-| `clawmacs/agent` | `agent` struct: name, client, tool-registry, system-prompt |
-| `clawmacs/session` | `session` struct: agent + message history + token tracking |
-| `clawmacs/tools` | Tool registry, `register-tool!`, `define-tool` macro |
-| `clawmacs/builtins` | Built-in tools: exec, read_file, write_file, list_dir, web_fetch, tts |
-| `clawmacs/loop` | `run-agent`, `agent-turn`, hook variables |
-| `clawmacs/conditions` | `tool-error`, `agent-error`, `budget-exceeded` |
-| `clawmacs/logging` | JSONL structured logging, `with-logging` macro |
-| `clawmacs/session` | Save/load session as JSON (one file per conversation) |
-| `clawmacs/memory` | Load workspace memory files at startup (SOUL.md, AGENTS.md, etc.) |
-| `clawmacs/registry` | Named agent registry (`define-agent`, `find-agent`) |
-| `clawmacs/subagents` | Spawn parallel agent threads (`spawn-subagent`, `subagent-wait`) |
-| `clawmacs/channels` | Abstract channel protocol (repl, queue channels) |
-| `clawmacs/http-server` | Hunchentoot HTTP management API |
-| `clawmacs/config` | Emacs-style config system (init.lisp, defoption, hooks) |
-| `clawmacs/telegram` | Telegram Bot API long-polling channel |
-| `clawmacs/irc` | Raw IRC client with TLS, NickServ, flood protection, reconnect |
-| `clawmacs/browser` | Playwright-backed browser control |
-| `clawmacs/cron` | Thread-based periodic/one-shot task scheduler |
-
-### Agent Loop Flow
-
-```
-run-agent session user-message
-  │
-  ├── add user message to session history
-  │
-  └── loop (up to max-turns):
-        agent-turn
-          │
-          ├── *before-agent-turn-hook* fires
-          │
-          ├── cl-llm:chat (or :chat-stream) with tool definitions
-          │     └── returns (text tool-calls usage-data)
-          │
-          ├── if no tool-calls → return text (done)
-          │
-          └── for each tool-call:
-                *on-tool-call* hook fires
-                execute tool from registry
-                *on-tool-result* hook fires
-                *after-tool-call-hook* fires
-                add tool-result to session history
-                → loop again
-```
-
-### Hook System
-
-```lisp
-;; Available hook variables:
-clawmacs/config:*after-init-hook*         ; () → runs after init.lisp loads
-clawmacs/config:*before-agent-turn-hook*  ; (session msg) → before each turn
-clawmacs/config:*after-tool-call-hook*    ; (tool-name result) → after tool runs
-clawmacs/config:*channel-message-hook*    ; (channel msg) → inbound channel message
-
-;; Loop hooks (on the agent loop directly):
-clawmacs/loop:*on-stream-delta*   ; (delta) → per streaming token
-clawmacs/loop:*on-tool-call*      ; (name call) → tool invocation
-clawmacs/loop:*on-tool-result*    ; (name result) → tool result
-clawmacs/loop:*on-llm-response*   ; (text) → final LLM response
-```
-
----
-
-## Layer 3: clawmacs-gui — McCLIM Graphical Frontend
-
-**Purpose:** A native windowed chat interface using McCLIM (the free Common Lisp
-GUI framework). Optional — Clawmacs works fine without it.
-
-```lisp
-(ql:quickload :clawmacs-gui)
-(clawmacs-gui:run-gui :session my-session)
-```
-
-The GUI uses a background `bordeaux-threads` worker for LLM calls so the
-interface stays responsive during streaming.
-
----
-
-## Data Flow: Message to Response
-
-### In Telegram channel
-
-```
-User sends Telegram message
-  │
-  └── clawmacs/telegram: polling thread receives update
-        │
-        ├── check allowed-users allowlist
-        │
-        └── find-or-create-session (per chat-id)
-              │
-              └── run-agent session message-text
-                    │
-                    ├── [if streaming] send "..." placeholder; editMessageText per debounce
-                    │
-                    └── final text → sendMessage (or editMessageText)
-```
-
-### In IRC channel
-
-```
-IRC server sends PRIVMSG
-  │
-  └── clawmacs/irc: reader-thread receives line
-        │
-        ├── parse-irc-line → command="PRIVMSG"
-        │
-        ├── check trigger (nick mention in channel, or any message in DM)
-        │
-        ├── check allowed-users (global or per-channel policy)
-        │
-        └── bt:make-thread → %route-message
-              │
-              └── find-or-create-session (per reply-target)
-                    │
-                    └── run-agent session message-text
-                          │
-                          └── irc-send-privmsg (splits at 400 chars, flood-throttled)
-```
-
----
-
-## Extension Points
-
-### Add new tools
-
-```lisp
-;; In init.lisp:
-(define-user-tool my-tool
-  :description "..."
-  :parameters  '((:name "param" :type "string" :description "..."))
-  :function    #'my-handler)
-```
-
-### Add a new channel
-
-1. Create a new module (`src/my-channel.lisp`)
-2. Define a struct for connection state
-3. Implement `(defmethod clawmacs/config:register-channel ((type (eql :my-channel)) &rest args ...))`
-4. Add a `start-my-channel` function that starts a background thread
-5. Export symbols from `clawmacs` and `clawmacs-user` packages
-
-### Add a new LLM backend
-
-1. Implement the OpenAI-compat API on your backend, or
-2. Add a new client type to `cl-llm` following the `cl-llm/protocol` contracts
-
----
-
-## ASDF System Versions
-
-| Version | Milestone |
-|---------|----------|
-| 0.1.0 | Layer 1: cl-llm |
-| 0.2.0 | Layer 2: clawmacs-core + cl-tui |
-| 0.3.0 | Layer 3: clawmacs-gui |
-| 0.4.0 | Layer 6a: config system (init.lisp) |
-| 0.5.0 | Layer 6b: Telegram channel |
-| 0.6.0 | Layer 6c: IRC channel |
-| 0.7.0 | Layer 7: Browser control |
-| 0.8.0 | Layer 8: Cron + HTTP management API |
-
----
-
-## Known Architectural Gaps
-
-| Gap | Severity | Notes |
-|-----|---------|-------|
-| Tool schema not validated | Low | Parameters accepted but not type-checked |
-| No streaming tool calls | Low | Tools only parsed from complete responses |
-| McCLIM thread safety | Medium | `safe-redisplay` is a workaround |
-| No Anthropic native API | Medium | Use via OpenRouter as workaround |
-| No Discord channel | Medium | On the roadmap |
-| `tool-result-ok` naming collision | Low | See ROADMAP known gaps |
+The architecture and core systems load and run; naming migration is in progress,
+which is why directory names (`clambda-*`) and system names (`clawmacs-*`) differ.

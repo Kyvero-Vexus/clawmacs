@@ -1,6 +1,6 @@
 # Getting Started
 
-Goal: get from zero to a working Clawmacs agent in under 10 minutes.
+Goal: get from zero to a working Clawmacs agent quickly.
 
 ## Prerequisites
 
@@ -8,21 +8,11 @@ Goal: get from zero to a working Clawmacs agent in under 10 minutes.
 |---|---|---|
 | SBCL | 2.3.0+ | `sbcl --version` |
 | Quicklisp | any | `ls ~/quicklisp/setup.lisp` |
-| LM Studio or Ollama | any | LM Studio on your local network |
+| LM Studio or Ollama | any | reachable OpenAI-compatible endpoint |
 
-Clawmacs is a **local-first** platform. It works best with a local LLM server
-(LM Studio, Ollama) running on your machine or home network.
-
-Cloud LLMs (OpenRouter, Anthropic) can be added as a fallback — see the
-[configuration guide](../configuration/init-lisp.md).
+Clawmacs is local-first and works well with local LLM servers (LM Studio/Ollama).
 
 ## 1. Install SBCL and Quicklisp
-
-### Guix (recommended for Linux)
-
-```bash
-guix install sbcl
-```
 
 ### Debian/Ubuntu
 
@@ -46,8 +36,6 @@ sbcl --load quicklisp.lisp \
      --quit
 ```
 
-This installs Quicklisp to `~/quicklisp/` and adds it to `~/.sbclrc`.
-
 ## 2. Clone Clawmacs
 
 ```bash
@@ -56,18 +44,7 @@ git clone https://github.com/chrysolambda-ops/clawmacs.git
 cd clawmacs
 ```
 
-The repository contains four ASDF systems:
-
-| System | Purpose |
-|--------|---------|
-| `cl-llm` | LLM API client (OpenAI-compat, streaming) |
-| `cl-tui` | Terminal chat UI |
-| `clawmacs-core` | Agent platform core |
-| `clawmacs-gui` | McCLIM graphical frontend |
-
 ## 3. Register with ASDF
-
-Tell ASDF where to find the systems:
 
 ```bash
 mkdir -p ~/.config/common-lisp/source-registry.conf.d/
@@ -76,35 +53,15 @@ cat > ~/.config/common-lisp/source-registry.conf.d/clawmacs.conf << 'EOF'
 EOF
 ```
 
-Replace `/home/YOUR-USER/projects/clawmacs` with the actual path.
-
 ## 4. Create init.lisp
 
 ```bash
 mkdir -p ~/.clawmacs
-cp projects/clawmacs-core/example-init.lisp ~/.clawmacs/init.lisp
+cp projects/clambda-core/example-init.lisp ~/.clawmacs/init.lisp
 $EDITOR ~/.clawmacs/init.lisp
 ```
 
-At minimum, set your LLM base URL:
-
-```lisp
-(in-package #:clawmacs-user)
-
-;; Point to LM Studio or Ollama on your network
-;; LM Studio:
-(setf *default-model* "google/gemma-3-4b")  ; or whatever model you have loaded
-
-;; Optional: start the HTTP management API
-;; (setf *api-token* "your-secret-token")
-;; (add-hook '*after-init-hook*
-;;           (lambda () (start-server :port 7474 :address "127.0.0.1")))
-```
-
-The `example-init.lisp` file is thoroughly commented and shows every available option.
-
-> **Security:** `~/.clawmacs/init.lisp` may contain API keys and bot tokens.
-> Keep it out of version control. The clawmacs `.gitignore` excludes it by default.
+At minimum, set your model/defaults in `~/.clawmacs/init.lisp`.
 
 ## 5. Run the REPL
 
@@ -114,44 +71,15 @@ sbcl --eval '(ql:quickload :clawmacs-core)' \
      --eval '(in-package :clawmacs-user)'
 ```
 
-Or interactively:
-
-```lisp
-CL-USER> (ql:quickload :clawmacs-core)
-CL-USER> (clawmacs/config:load-user-config)
-;; → your init.lisp runs, hooks fire
-CL-USER> (in-package :clawmacs-user)
-CLAMBDA-USER> (describe-options)  ; see all config options
-CLAMBDA-USER> (list-tasks)        ; see scheduled tasks
-```
-
-## 6. Chat from the terminal
-
-```lisp
-CLAMBDA-USER>
-(let* ((client  (cl-llm:make-client
-                  :base-url "http://192.168.1.189:1234/v1"
-                  :api-key  "lmstudio"
-                  :model    "google/gemma-3-4b"))
-       (agent   (make-agent :name "my-agent" :client client))
-       (session (make-session :agent agent)))
-  (format t "~A~%" (run-agent session "Hello! What can you do?")))
-```
-
-Or launch the terminal chat UI:
+## 6. Optional terminal UI
 
 ```bash
 sbcl --eval '(ql:quickload :cl-tui)' \
-     --eval '(cl-tui:run :model "google/gemma-3-4b")' 
+     --eval '(cl-tui:run :model "google/gemma-3-4b")'
 ```
-
-## 7. Enable Telegram (optional)
-
-See [Telegram setup](../channels/telegram.md) for creating a bot and configuring the token.
 
 ## Next Steps
 
-- [Configuration Guide](../configuration/init-lisp.md) — full init.lisp reference
-- [Architecture Overview](../architecture/index.md) — understand the system
-- [Built-in Tools](../api/tools.md) — what tools agents have by default
-- [Custom Tools](../tools/custom-tools.md) — add your own tools
+- [Installation](installation.md)
+- [Configuration Guide](../configuration/init-lisp.md)
+- [Architecture Overview](../architecture/index.md)

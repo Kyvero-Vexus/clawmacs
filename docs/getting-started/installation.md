@@ -1,57 +1,21 @@
 # Installation
 
-Detailed installation instructions for all supported platforms.
+Detailed installation instructions for Clawmacs.
 
 ## System Requirements
 
-- **SBCL 2.3.0+** — Steel Bank Common Lisp, the reference runtime
-- **Quicklisp** — the de-facto CL package manager
-- **ASDF 3.3+** — build system (bundled with SBCL)
-- **libssl** — for IRC TLS support (`cl+ssl` dependency)
-- **Node.js 18+** — only for browser automation (optional)
-
-### Optional LLM backends
-
-Clawmacs uses any OpenAI-compatible API:
-
-| Backend | URL format | Notes |
-|---------|-----------|-------|
-| LM Studio | `http://HOST:1234/v1` | Recommended for local use |
-| Ollama | `http://HOST:11434/v1` | Use `/v1` OpenAI-compat endpoint |
-| OpenRouter | `https://openrouter.ai/api/v1` | Cloud gateway, many models |
-| LM Studio remote | `http://192.168.1.x:1234/v1` | Home server, RTX 4090 etc. |
-
----
+- **SBCL 2.3.0+**
+- **Quicklisp**
+- **ASDF 3.3+** (bundled with SBCL)
+- **libssl** for TLS features (`cl+ssl`)
+- **Node.js 18+** only if you use browser automation
 
 ## Install SBCL
-
-### Guix (Linux — recommended)
-
-```bash
-guix install sbcl
-# Verify:
-sbcl --version   # SBCL 2.x.x
-```
 
 ### Debian / Ubuntu
 
 ```bash
 sudo apt update && sudo apt install sbcl
-```
-
-> The Debian/Ubuntu SBCL may be older. If `sbcl --version` shows < 2.3, install
-> from source or use Guix.
-
-### Fedora / RHEL
-
-```bash
-sudo dnf install sbcl
-```
-
-### Arch Linux
-
-```bash
-sudo pacman -S sbcl
 ```
 
 ### macOS (Homebrew)
@@ -60,34 +24,10 @@ sudo pacman -S sbcl
 brew install sbcl
 ```
 
-### macOS (MacPorts)
-
-```bash
-sudo port install sbcl
-```
-
-### From source (any platform)
-
-```bash
-# Download from https://www.sbcl.org/platform-table.html
-# e.g. for x86-64 Linux:
-curl -O https://downloads.sourceforge.net/project/sbcl/sbcl/2.5.8/sbcl-2.5.8-x86-64-linux-binary.tar.bz2
-tar xf sbcl-2.5.8-x86-64-linux-binary.tar.bz2
-cd sbcl-2.5.8-x86-64-linux/
-sudo ./install.sh
-```
-
----
-
 ## Install Quicklisp
 
-Quicklisp is a package manager for CL that downloads and caches library dependencies.
-
 ```bash
-# Download the installer
 curl -O https://beta.quicklisp.org/quicklisp.lisp
-
-# Install to ~/quicklisp/ and add to ~/.sbclrc
 sbcl --load quicklisp.lisp \
      --eval '(quicklisp-quickstart:install)' \
      --eval '(ql:add-to-init-file)' \
@@ -98,119 +38,67 @@ Verify:
 
 ```bash
 sbcl --eval '(ql:system-apropos "dexador")' --quit
-# Should print something like: #<SYSTEM dexador ...>
 ```
-
----
 
 ## Install Clawmacs
 
-### From GitHub (recommended)
-
 ```bash
-cd ~/projects          # or wherever you keep code
+cd ~/projects
 git clone https://github.com/chrysolambda-ops/clawmacs.git
+cd clawmacs
 ```
 
-This gives you four projects under `clawmacs/projects/`:
+Repository layout currently includes:
 
-```
+```text
 projects/
-  cl-llm/          # LLM API client
-  cl-tui/          # terminal chat UI  
-  clawmacs-core/    # agent platform (main system)
-  clawmacs-gui/     # McCLIM GUI (optional)
+  cl-llm/
+  cl-tui/
+  clambda-core/
+  clambda-gui/
+  cl-term/
 ```
 
-### Register with ASDF
+ASDF systems to load are still `:clawmacs-core` and `:clawmacs-gui`.
 
-ASDF needs to know where to find the Clawmacs systems. Create a source registry config:
+## Register with ASDF
 
 ```bash
 mkdir -p ~/.config/common-lisp/source-registry.conf.d/
-
 cat > ~/.config/common-lisp/source-registry.conf.d/clawmacs.conf << 'EOF'
 (:tree "/home/YOU/projects/clawmacs/projects/")
 EOF
 ```
 
-Replace `/home/YOU/projects/clawmacs` with your actual path. The `:tree` directive
-makes ASDF recursively scan that directory for `.asd` files.
-
----
-
-## Install Dependencies
-
-Quicklisp will download most dependencies automatically. To pre-load all of them:
+## Install Dependencies / Smoke test
 
 ```bash
 sbcl --eval '(ql:quickload :clawmacs-core)' --quit
 ```
 
-This will download and compile: `dexador`, `jzon`, `alexandria`, `cl-ppcre`,
-`usocket`, `cl+ssl`, `bordeaux-threads`, `hunchentoot`, `parachute`.
-
-Expect the first load to take 2–5 minutes. Subsequent loads use compiled FASLs.
-
-### Guix / NixOS: LD_LIBRARY_PATH
-
-On Guix and NixOS, you may need to set `LD_LIBRARY_PATH` for `dexador` (which uses
-libssl via `cl+ssl`):
+Optional terminal UI:
 
 ```bash
-# Find the libssl path:
-guix package --search-paths 2>/dev/null | grep LD_LIBRARY
-# Or:
-ls ~/.guix-profile/lib/libssl*
-
-# Add to your shell profile (~/.bashrc or ~/.profile):
-export LD_LIBRARY_PATH="$HOME/.guix-profile/lib:$LD_LIBRARY_PATH"
+sbcl --eval '(ql:quickload :cl-tui)' --quit
 ```
-
----
 
 ## Browser Automation (optional)
 
-Browser tools require Node.js and Playwright. From the clawmacs-core directory:
-
 ```bash
-cd projects/clawmacs-core/browser/
-npm install                           # install playwright npm package
-npx playwright install chromium       # ~200MB Chromium download
+cd projects/clambda-core/browser/
+npm install
+npx playwright install chromium
 ```
-
-Then in `init.lisp`:
-
-```lisp
-(register-channel :browser :headless t)
-(add-hook '*after-init-hook* #'clawmacs/browser:browser-launch)
-```
-
----
 
 ## Verify Installation
 
-Run the test suite:
-
 ```bash
 sbcl --eval '(ql:quickload :clawmacs-core)' \
-     --eval '(asdf:test-system :clawmacs-core)' \
-     --quit 2>&1 | tail -20
-```
-
-Expected: `235 tests, 0 failures`.
-
-Or a quick smoke test:
-
-```bash
-sbcl --eval '(ql:quickload :clawmacs-core)' \
-     --eval '(format t "Clawmacs ~A loaded OK~%" (asdf:system-version (asdf:find-system :clawmacs-core)))' \
+     --eval '(format t "Clawmacs core loaded OK~%")' \
      --quit
 ```
 
----
-
 ## Next Steps
 
-- [Quick Start](README.md) — run your first agent
-- [Configuration](../configuration/init-lisp.md) — write your `init.lisp`
+- [Quick Start](README.md)
+- [Configuration](../configuration/init-lisp.md)
