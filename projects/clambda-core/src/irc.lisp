@@ -101,6 +101,7 @@ Slots:
   (dm-allowed-users nil)            ; list of nicks allowed to DM, or NIL (use global)
   ;; Runtime (nil = not connected)
   (socket           nil)
+  (ssl-stream       nil)            ; raw cl+ssl stream — must be retained to prevent GC
   (stream           nil)
   (reader-thread    nil)
   (flood-thread     nil)
@@ -333,6 +334,7 @@ Sets irc-socket and irc-stream slots. On failure, leaves them NIL."
                                (flexi-streams:make-flexi-stream raw-stream :external-format :utf-8)
                                raw-stream)))
           (setf (irc-socket conn) socket
+                (irc-ssl-stream conn) (when tls-p raw-stream)
                 (irc-stream conn) io-stream)
           ;; Send NICK/USER immediately (before flood thread loop can run)
           (%register conn)
@@ -355,7 +357,8 @@ Sets irc-socket and irc-stream slots. On failure, leaves them NIL."
             (%write-raw-line stream (irc-build-line "QUIT" nil "Clawmacs signing off"))
             (close stream))
         (error () nil))
-      (setf (irc-stream conn) nil)))
+      (setf (irc-stream conn) nil
+            (irc-ssl-stream conn) nil)))
   (let ((socket (irc-socket conn)))
     (when socket
       (handler-case (usocket:socket-close socket) (error () nil))
@@ -625,13 +628,15 @@ Otherwise falls back to (irc-allowed-users conn)."
   "Read and dispatch IRC lines from CONN's stream until EOF or error.
 Returns normally when the connection drops or (irc-running-p conn) is NIL."
   (handler-case
-      (loop
-        (unless (irc-running-p conn) (return))
-        (let ((raw (read-line (irc-stream conn) nil nil)))
-          (unless raw (return))  ; EOF — server closed connection
-          (let ((line (%strip-cr raw)))
-            (when (> (length line) 0)
-              (%dispatch-line conn line)))))
+      (let ((stream (irc-stream conn)))
+        (loop
+          (unless (and (irc-running-p conn) stream (open-stream-p stream))
+            (return))
+          (let ((raw (read-line stream nil nil)))
+            (unless raw (return))  ; EOF — server closed connection
+            (let ((line (%strip-cr raw)))
+              (when (> (length line) 0)
+                (%dispatch-line conn line))))))
     (error (e)
       (when (irc-running-p conn)
         (format *error-output* "~&[irc] Read error: ~A~%" e)))))
