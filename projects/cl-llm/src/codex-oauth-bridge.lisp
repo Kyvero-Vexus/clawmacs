@@ -37,7 +37,7 @@ Claude CLI and prepends an explicit warning to the assistant response."
                                   "Codex OAuth subscription transport unavailable (~A). Using Claude CLI fallback for this response. To restore Codex, run /codex_login + /codex_link, ensure `codex login` completed on host, then retry."
                                   e))
                  (fallback (cl-llm/claude-cli:claude-cli-chat messages
-                                                               :model model
+                                                               :model cl-llm/claude-cli:*claude-cli-default-model*
                                                                :system-prompt system-prompt
                                                                :max-tokens max-tokens)))
             (%prepend-warning-to-response fallback warning))))))
