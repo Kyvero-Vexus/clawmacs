@@ -10,7 +10,7 @@
   (api-key         "not-needed" :type string)
   (model           nil :type (or null string))
   (default-options nil)   ; instance of request-options or nil
-  (api-type        :openai :type (member :openai :anthropic :claude-cli :codex-cli)))
+  (api-type        :openai :type (member :openai :anthropic :claude-cli :codex-cli :codex-oauth)))
 
 (defun make-client (&key base-url api-key model default-options (api-type :openai))
   "Create a new LLM client.
@@ -19,15 +19,15 @@ BASE-URL is the endpoint root, e.g. \"http://localhost:11434/v1\".
 API-KEY defaults to \"not-needed\" (suitable for local models).
 MODEL is the default model name.
 DEFAULT-OPTIONS is an optional REQUEST-OPTIONS struct.
-API-TYPE is :OPENAI (default), :ANTHROPIC, :CLAUDE-CLI, or :CODEX-CLI."
-  (assert (or base-url (member api-type '(:claude-cli :codex-cli))) ()
-          "BASE-URL is required (unless api-type is :claude-cli or :codex-cli)")
+API-TYPE is :OPENAI (default), :ANTHROPIC, :CLAUDE-CLI, :CODEX-CLI, or :CODEX-OAUTH."
+  (assert (or base-url (member api-type '(:claude-cli :codex-cli :codex-oauth))) ()
+          "BASE-URL is required (unless api-type is :claude-cli, :codex-cli, or :codex-oauth)")
   (%make-client
    :base-url        (if base-url
                         (string-right-trim "/" base-url)
-                        (if (eq api-type :codex-cli)
-                            "cli://codex"
-                            "cli://claude"))
+                        (cond ((eq api-type :codex-cli) "cli://codex")
+                              ((eq api-type :codex-oauth) "https://api.openai.com/v1")
+                              (t "cli://claude")))
    :api-key         (or api-key "not-needed")
    :model           model
    :default-options default-options
@@ -60,6 +60,15 @@ Requires the codex CLI to be installed and authenticated via:
    :api-key  "not-needed"
    :model    model
    :api-type :codex-cli))
+
+(defun make-codex-oauth-client (&key model (base-url "https://api.openai.com/v1"))
+  "Create a client that uses native OAuth tokens from cl-llm/codex-oauth.
+No codex CLI dependency."
+  (%make-client
+   :base-url base-url
+   :api-key  "oauth"
+   :model    model
+   :api-type :codex-oauth))
 
 (defun make-anthropic-client (&key api-key model)
   "Create a client configured for the Anthropic Messages API.
@@ -139,8 +148,11 @@ Returns a COMPLETION-RESPONSE."
              :max-tokens    (when effective-opts
                               (cl-llm/protocol:request-options-max-tokens effective-opts))))))
 
-    ;; HTTP backends (:openai / :anthropic)
+    ;; HTTP backends (:openai / :anthropic / :codex-oauth)
     (let* ((anthropic-p  (eq api-type :anthropic))
+           (effective-api-key (if (eq api-type :codex-oauth)
+                                  (cl-llm/codex-oauth:codex-oauth-access-token)
+                                  (client-api-key client)))
            (request-ht   (if anthropic-p
                              (cl-llm/protocol::build-anthropic-request-ht
                               effective-model messages effective-opts tools)
@@ -149,7 +161,7 @@ Returns a COMPLETION-RESPONSE."
            (body-str     (com.inuoe.jzon:stringify request-ht))
            (response-str (cl-llm/http:post-json
                           (chat-url client)
-                          (client-api-key client)
+                          effective-api-key
                           body-str
                           :anthropic-p anthropic-p)))
       (if anthropic-p
@@ -189,8 +201,11 @@ Returns the full accumulated text string when done."
              :max-tokens    (when effective-opts
                               (cl-llm/protocol:request-options-max-tokens effective-opts))))))
 
-    ;; HTTP backends (:openai / :anthropic)
+    ;; HTTP backends (:openai / :anthropic / :codex-oauth)
     (let* ((anthropic-p     (eq api-type :anthropic))
+           (effective-api-key (if (eq api-type :codex-oauth)
+                                  (cl-llm/codex-oauth:codex-oauth-access-token)
+                                  (client-api-key client)))
            (request-ht      (if anthropic-p
                                 (cl-llm/protocol::build-anthropic-request-ht
                                  effective-model messages effective-opts tools)
@@ -203,7 +218,7 @@ Returns the full accumulated text string when done."
       (declare (ignore _))
       (cl-llm/http:post-json-stream
        (chat-url client)
-       (client-api-key client)
+       effective-api-key
        body-str
        (lambda (line)
          (if anthropic-p

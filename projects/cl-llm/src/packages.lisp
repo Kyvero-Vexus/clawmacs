@@ -108,6 +108,7 @@
    #:make-anthropic-client
    #:make-claude-cli-client
    #:make-codex-cli-client
+   #:make-codex-oauth-client
    #:client-base-url
    #:client-api-key
    #:client-model
@@ -157,6 +158,22 @@
    #:claude-cli-chat
    #:claude-cli-chat-stream))
 
+(defpackage #:cl-llm/codex-oauth
+  (:use #:cl)
+  (:export
+   #:*codex-oauth-client-id*
+   #:*codex-oauth-authorize-endpoint*
+   #:*codex-oauth-token-endpoint*
+   #:*codex-oauth-redirect-uri*
+   #:*codex-oauth-scope*
+   #:*codex-oauth-store-path*
+   #:codex-oauth-start
+   #:codex-oauth-complete
+   #:codex-oauth-refresh
+   #:codex-oauth-access-token
+   #:codex-oauth-status
+   #:codex-oauth-status-string))
+
 (defpackage #:cl-llm/codex-cli
   (:use #:cl)
   (:import-from #:cl-llm/protocol
@@ -176,11 +193,20 @@
 (defpackage #:cl-llm
   (:use #:cl)
   (:import-from #:cl-llm/client
-                #:client #:make-client #:make-anthropic-client #:make-claude-cli-client #:make-codex-cli-client
+                #:client #:make-client #:make-anthropic-client #:make-claude-cli-client #:make-codex-cli-client #:make-codex-oauth-client
                 #:client-base-url #:client-api-key #:client-model #:client-api-type
                 #:chat #:chat-stream #:simple-chat #:with-client)
   (:import-from #:cl-llm/codex-cli
                 #:*codex-auth-mode* #:codex-auth-status #:codex-auth-status-string)
+  (:import-from #:cl-llm/codex-oauth
+                #:*codex-oauth-client-id*
+                #:*codex-oauth-authorize-endpoint*
+                #:*codex-oauth-token-endpoint*
+                #:*codex-oauth-redirect-uri*
+                #:*codex-oauth-scope*
+                #:*codex-oauth-store-path*
+                #:codex-oauth-start #:codex-oauth-complete #:codex-oauth-refresh
+                #:codex-oauth-access-token #:codex-oauth-status #:codex-oauth-status-string)
   (:import-from #:cl-llm/protocol
                 #:message #:system-message #:user-message
                 #:assistant-message #:tool-message
@@ -210,10 +236,14 @@
                 #:stream-to-string)
   (:export
    ;; Client
-   #:client #:make-client #:make-anthropic-client #:make-claude-cli-client #:make-codex-cli-client
+   #:client #:make-client #:make-anthropic-client #:make-claude-cli-client #:make-codex-cli-client #:make-codex-oauth-client
    #:client-base-url #:client-api-key #:client-model #:client-api-type
    ;; Codex OAuth diagnostics
    #:*codex-auth-mode* #:codex-auth-status #:codex-auth-status-string
+   #:*codex-oauth-client-id* #:*codex-oauth-authorize-endpoint* #:*codex-oauth-token-endpoint*
+   #:*codex-oauth-redirect-uri* #:*codex-oauth-scope* #:*codex-oauth-store-path*
+   #:codex-oauth-start #:codex-oauth-complete #:codex-oauth-refresh #:codex-oauth-access-token
+   #:codex-oauth-status #:codex-oauth-status-string
    #:chat #:chat-stream #:simple-chat #:with-client
    ;; Messages
    #:message #:system-message #:user-message

@@ -8,7 +8,8 @@
   :depends-on ("dexador"
                "com.inuoe.jzon"
                "alexandria"
-               "cl-ppcre")
+               "cl-ppcre"
+               "quri")
   :serial t
   :components ((:file "src/packages")
                (:file "src/conditions")
@@ -19,7 +20,8 @@
                (:file "src/streaming")
                (:file "src/tools")
                (:file "src/claude-cli")
-               (:file "src/codex-cli"))
+               (:file "src/codex-cli")
+               (:file "src/codex-oauth"))
   :in-order-to ((test-op (test-op "cl-llm/tests"))))
 
 (defsystem "cl-llm/tests"

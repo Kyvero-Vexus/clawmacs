@@ -1,107 +1,62 @@
-# Codex OAuth in Clawmacs
+# Codex OAuth (No Codex CLI Required)
 
-Use this when you want Clawmacs to talk to Codex through an OAuth-linked CLI session instead of storing an API key in `init.lisp`.
+Clawmacs supports a native browser-link OAuth flow for Codex/OpenAI endpoints.
 
-## 1) Prerequisites
+## What changed
 
-- `codex` CLI installed and available on `PATH`
-- Clawmacs checkout + SBCL/Quicklisp working
-- A model compatible with your Codex account (example: `gpt-5-codex`)
+- ✅ No `codex` CLI dependency
+- ✅ Login URL generated in bot via `/codex_login`
+- ✅ Paste redirect URL into `/codex_link <redirect-url>`
+- ✅ Tokens stored locally at `~/.clawmacs/auth/codex-oauth.json` (mode `0600`)
+- ✅ Auto-refresh with refresh token during runtime
 
-Check CLI availability:
-
-```bash
-codex --help
-```
-
-## 2) Link/login flow
-
-Authenticate the CLI with OAuth:
-
-```bash
-codex login
-```
-
-Follow the browser/device prompts until the CLI reports success.
-
-## 3) Where session credentials are stored
-
-Clawmacs mirrors OpenClaw behavior and auto-discovers the Codex OAuth session from the local Codex CLI state directory, typically under:
-
-```text
-~/.codex/
-```
-
-Common files detected by Clawmacs include:
-- `~/.codex/auth.json`
-- `~/.codex/credentials.json`
-- `~/.codex/token.json`
-- `~/.codex/config.json`
-
-(Exact file names are CLI-managed and may vary by Codex version.)
-
-## 4) Required `init.lisp` config
-
-Set Clawmacs to use the Codex CLI backend explicitly:
+## init.lisp configuration
 
 ```lisp
 (in-package #:clawmacs-user)
 
-(setf clawmacs/telegram:*telegram-llm-api-type* :codex-cli)
-(setf clawmacs/telegram:*telegram-codex-auth-mode* :oauth-session)
+(setf clawmacs/telegram:*telegram-llm-api-type* :codex-oauth)
+(setf cl-llm:*codex-oauth-client-id* "YOUR_OAUTH_CLIENT_ID")
 (setf *default-model* "gpt-5-codex")
 ```
 
-`*telegram-llm-api-key*` is ignored for `:codex-cli` mode; OAuth session is used automatically.
-
-If you build clients directly, use:
+Optional endpoint overrides:
 
 ```lisp
-(cl-llm:make-codex-cli-client :model "gpt-5-codex")
+(setf cl-llm:*codex-oauth-authorize-endpoint* "https://auth.openai.com/oauth/authorize")
+(setf cl-llm:*codex-oauth-token-endpoint* "https://auth.openai.com/oauth/token")
+(setf cl-llm:*codex-oauth-redirect-uri* "https://localhost/callback")
 ```
 
-## 5) Verification
+## Telegram login flow
 
-First verify CLI auth outside Clawmacs:
+1. Send `/codex_login`
+2. Open the returned URL and approve access
+3. Copy the full redirect URL from your browser
+4. Send `/codex_link <redirect-url>`
+5. Verify with `/codex_status`
 
-```bash
-codex exec --json --model gpt-5-codex "Reply with: oauth-ok"
-```
+Accepted `/codex_link` payloads:
+- full redirect URL containing `?code=...&state=...`
+- `code#state` blob
 
-Then verify diagnostics in Clawmacs:
+## Troubleshooting
 
-```bash
-sbcl --eval '(ql:quickload :clawmacs-core)' \
-     --eval '(format t "~A~%" (cl-llm:codex-auth-status-string :model "gpt-5-codex"))' \
-     --quit
-```
+### `Codex OAuth client id missing`
+Set `cl-llm:*codex-oauth-client-id*` in `init.lisp`.
 
-In Telegram sessions, you can also check:
-- `/status` (includes Codex CLI + OAuth linked/missing when in `:codex-cli` mode)
-- `/codex_auth_status` (full diagnostics + remediation commands)
+### `OAuth state mismatch`
+Run `/codex_login` again and use the newest redirect.
 
-## 6) Troubleshooting
+### `Malformed input`
+Paste the full redirect URL exactly as copied from browser.
 
-### "Codex CLI failed" / no output
+### Expired token
+Refresh is automatic if a refresh token exists. If refresh fails, relink using `/codex_login` + `/codex_link`.
 
-- Ensure `codex` is installed and on `PATH`
-- Re-run `codex login`
-- Retry the standalone verification command above
+## Security notes
 
-### Expired or invalid OAuth session
-
-Re-authenticate:
-
-```bash
-codex login
-```
-
-### Wrong auth mode in Clawmacs
-
-If Clawmacs still tries HTTP provider auth, ensure:
-
-```lisp
-(setf clawmacs/telegram:*telegram-llm-api-type* :codex-cli)
-```
-
-and restart the running channel/session.
+- Token file path: `~/.clawmacs/auth/codex-oauth.json`
+- File permissions forced to `0600` on save
+- Raw tokens are not printed in status output
+- Re-running link overwrites previous stored session (rotation supported)

@@ -61,28 +61,34 @@ Inspect options:
   :streaming     t)
 ```
 
-## Codex OAuth mode (CLI-backed)
+## Codex OAuth mode (native; no CLI)
 
 ```lisp
 (in-package #:clawmacs-user)
 
-;; Use codex CLI (OAuth session from `codex login`)
-(setf clawmacs/telegram:*telegram-llm-api-type* :codex-cli)
-(setf clawmacs/telegram:*telegram-codex-auth-mode* :oauth-session)
+(setf clawmacs/telegram:*telegram-llm-api-type* :codex-oauth)
+(setf cl-llm:*codex-oauth-client-id* "YOUR_OAUTH_CLIENT_ID")
 (setf *default-model* "gpt-5-codex")
 ```
 
-You can also construct a client directly:
+Direct client construction:
 
 ```lisp
-(cl-llm:make-codex-cli-client :model "gpt-5-codex")
+(cl-llm:make-codex-oauth-client :model "gpt-5-codex")
 ```
 
-Check OAuth linkage quickly:
+OAuth status:
 
 ```lisp
-(cl-llm:codex-auth-status-string :model *default-model*)
+(cl-llm:codex-oauth-status-string)
 ```
+
+Telegram flow:
+- `/codex_login`
+- `/codex_link <redirect-url|code#state>`
+- `/codex_status`
+
+Storage: `~/.clawmacs/auth/codex-oauth.json` (0600)
 
 See full setup/link flow: [Codex OAuth](../auth/codex-oauth.md)
 

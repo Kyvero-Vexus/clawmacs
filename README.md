@@ -52,14 +52,18 @@ Notes:
 - Quicklisp
 - For GUI: McCLIM + CLX
 - Optional browser tooling: Node.js + Playwright (used by browser integration)
-- Optional OAuth CLI backends: `claude` and/or `codex` CLIs
+- Optional OAuth CLI backend: `claude` CLI (Codex supports native OAuth, no CLI required)
 
-## OAuth CLI sessions
+## Codex OAuth (native browser-link)
 
-Clawmacs supports OAuth-authenticated CLI backends for local auth flows, including Codex.
-OpenClaw-parity behavior for Codex uses `codex login` + auto-discovery of linked session files under `~/.codex/`.
-Diagnostics are available via `(cl-llm:codex-auth-status-string)` and Telegram `/codex_auth_status`.
-See [Codex OAuth setup](docs/auth/codex-oauth.md) for link/login, config, and troubleshooting.
+Clawmacs now supports OpenClaw-style browser-link OAuth for Codex without requiring the `codex` CLI.
+Use Telegram commands:
+- `/codex_login`
+- `/codex_link <redirect-url|code#state>`
+- `/codex_status`
+
+Stored credentials path: `~/.clawmacs/auth/codex-oauth.json` (permission `0600`).
+See [Codex OAuth setup](docs/auth/codex-oauth.md) for full flow and troubleshooting.
 
 ---
 
