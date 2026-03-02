@@ -1,4 +1,4 @@
-;;;; Smoke test: :codex-oauth uses bridge transport (not api.openai chat/completions)
+;;;; Smoke test: :codex-oauth uses Node OAuth helper runtime first.
 
 (require 'asdf)
 (asdf:load-system :cl-llm)
@@ -14,21 +14,19 @@
   (format t "OK base-url: ~A~%" base)
 
   (let* ((called nil)
-         (orig-codex (symbol-function 'cl-llm/codex-cli:codex-cli-chat))
+         (orig-helper (symbol-function 'cl-llm/codex-oauth-bridge::%run-node-helper))
          (orig-claude (symbol-function 'cl-llm/claude-cli:claude-cli-chat)))
     (unwind-protect
          (progn
-           (setf (symbol-function 'cl-llm/codex-cli:codex-cli-chat)
+           (setf (symbol-function 'cl-llm/codex-oauth-bridge::%run-node-helper)
                  (lambda (&rest _)
                    (declare (ignore _))
-                   (setf called :codex)
-                   (cl-llm/protocol::make-completion-response
-                    :id "smoke-codex"
-                    :model "gpt-5-codex"
-                    :choices (list (cl-llm/protocol::make-choice
-                                    :message (cl-llm:assistant-message "bridge ok")
-                                    :finish-reason "stop"))
-                    :usage nil)))
+                   (setf called :helper)
+                   (let ((ht (make-hash-table :test 'equal)))
+                     (setf (gethash "ok" ht) t
+                           (gethash "text" ht) "bridge ok"
+                           (gethash "model" ht) "gpt-5-codex")
+                     ht)))
            (setf (symbol-function 'cl-llm/claude-cli:claude-cli-chat)
                  (lambda (&rest _)
                    (declare (ignore _))
@@ -43,12 +41,12 @@
 
            (let ((resp (cl-llm:chat client (list (cl-llm:user-message "hi")))))
              (declare (ignore resp))
-             (unless (eq called :codex)
-               (fail "bridge dispatch did not call codex transport; called=~A" called))))
-      (setf (symbol-function 'cl-llm/codex-cli:codex-cli-chat) orig-codex
+             (unless (eq called :helper)
+               (fail "bridge dispatch did not call helper first; called=~A" called))))
+      (setf (symbol-function 'cl-llm/codex-oauth-bridge::%run-node-helper) orig-helper
             (symbol-function 'cl-llm/claude-cli:claude-cli-chat) orig-claude)))
 
-  (format t "OK dispatch: :codex-oauth -> codex bridge transport~%"))
+  (format t "OK dispatch: :codex-oauth -> Node helper primary runtime~%"))
 
 (format t "PASS smoke-codex-oauth-bridge~%")
 (uiop:quit 0)

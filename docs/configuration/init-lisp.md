@@ -90,7 +90,7 @@ Telegram flow:
 
 Storage: `~/.clawmacs/auth/codex-oauth.json` (0600)
 
-Runtime note: `:codex-oauth` uses a subscription bridge transport (Codex CLI path) and avoids direct OpenAI Chat Completions API billing path. If unavailable, it can fall back to Claude CLI with an explicit warning.
+Runtime note: `:codex-oauth` first uses the Node helper (`projects/cl-llm/node/codex_oauth_helper.mjs`) powered by `@mariozechner/pi-ai` `openai-codex-responses` with OAuth session tokens from `~/.clawmacs/auth/codex-oauth.json`. This avoids direct OpenAI Chat Completions API-key quota path. If unavailable, it can fall back to Claude CLI with an explicit warning.
 
 See full setup/link flow: [Codex OAuth](../auth/codex-oauth.md)
 

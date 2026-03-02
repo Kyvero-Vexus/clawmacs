@@ -1,14 +1,63 @@
 ;;;; src/codex-oauth-bridge.lisp — Runtime bridge for :codex-oauth
-;;;;
-;;;; IMPORTANT:
-;;;; - Does NOT call https://api.openai.com/v1/chat/completions
-;;;; - Primary path: codex CLI transport (subscription-compatible)
-;;;; - Interim fallback: Claude CLI with explicit warning in assistant text
 
 (in-package #:cl-llm/codex-oauth-bridge)
 
 (defvar *codex-oauth-fallback-enabled* t
-  "When true, :codex-oauth runtime falls back to Claude CLI if Codex bridge fails.")
+  "When true, :codex-oauth runtime falls back to Claude CLI if Node OAuth bridge fails.")
+
+(defvar *codex-oauth-node-helper*
+  (merge-pathnames "node/codex_oauth_helper.mjs"
+                   (asdf:system-source-directory :cl-llm))
+  "Path to Node helper that executes openai-codex OAuth runtime via @mariozechner/pi-ai.")
+
+(defun %messages->bridge-payload (messages system-prompt max-tokens)
+  (let ((arr (make-array 0 :adjustable t :fill-pointer 0)))
+    (dolist (m messages)
+      (let ((role (string-downcase (symbol-name (cl-llm/protocol:message-role m))))
+            (content (or (cl-llm/protocol:message-content m) "")))
+        (vector-push-extend
+         (alexandria:plist-hash-table
+          (list "role" role
+                "content" content)
+          :test 'equal)
+         arr)))
+    (alexandria:plist-hash-table
+     (remove nil
+             (list "messages" arr
+                   "system" (or system-prompt "")
+                   "maxTokens" max-tokens)
+             :key #'null)
+     :test 'equal)))
+
+(defun %run-node-helper (payload)
+  (let* ((json (com.inuoe.jzon:stringify payload))
+         (helper (namestring *codex-oauth-node-helper*)))
+    (unless (probe-file helper)
+      (error "Codex OAuth helper not found: ~A" helper))
+    (multiple-value-bind (out err code)
+        (uiop:run-program (list "node" helper)
+                          :input json
+                          :output :string
+                          :error-output :string
+                          :ignore-error-status t)
+      (declare (ignore err))
+      (when (or (null out) (string= (string-trim '(#\Space #\Tab #\Newline) out) ""))
+        (error "Codex OAuth helper returned empty output (exit ~A)." code))
+      (let ((parsed (com.inuoe.jzon:parse out)))
+        (unless (gethash "ok" parsed)
+          (error "Codex OAuth helper failed: ~A" (or (gethash "error" parsed) out)))
+        parsed))))
+
+(defun %helper-response->completion (parsed model)
+  (let ((text (or (gethash "text" parsed) ""))
+        (resolved-model (or (gethash "model" parsed) model "gpt-5.3-codex")))
+    (cl-llm/protocol::make-completion-response
+     :id (format nil "codex-oauth-~A" (get-universal-time))
+     :model resolved-model
+     :choices (list (cl-llm/protocol::make-choice
+                     :message (cl-llm/protocol:assistant-message text)
+                     :finish-reason "stop"))
+     :usage nil)))
 
 (defun %prepend-warning-to-response (response warning)
   (let* ((choice (first (cl-llm/protocol:response-choices response)))
@@ -20,21 +69,19 @@
     response))
 
 (defun codex-oauth-bridge-chat (messages &key model system-prompt max-tokens)
-  "Runtime transport for :CODEX-OAUTH.
+  "Primary runtime transport for :CODEX-OAUTH.
 
-Attempts Codex subscription-compatible transport via CODEX CLI first.
-If unavailable and *CODEX-OAUTH-FALLBACK-ENABLED* is true, falls back to
-Claude CLI and prepends an explicit warning to the assistant response."
+Primary path: Node helper using @mariozechner/pi-ai openai-codex OAuth runtime.
+Secondary fallback (optional): Claude CLI with explicit warning."
   (handler-case
-      (cl-llm/codex-cli:codex-cli-chat messages
-                                       :model model
-                                       :system-prompt system-prompt
-                                       :max-tokens max-tokens)
+      (%helper-response->completion
+       (%run-node-helper (%messages->bridge-payload messages system-prompt max-tokens))
+       model)
     (error (e)
       (if (not *codex-oauth-fallback-enabled*)
-          (error "Codex OAuth bridge failed: ~A" e)
+          (error "Codex OAuth runtime failed: ~A" e)
           (let* ((warning (format nil
-                                  "Codex OAuth subscription transport unavailable (~A). Using Claude CLI fallback for this response. To restore Codex, run /codex_login + /codex_link, ensure `codex login` completed on host, then retry."
+                                  "Codex OAuth primary runtime failed (~A). Using Claude CLI fallback for this response. Re-run /codex_login + /codex_link and retry."
                                   e))
                  (fallback (cl-llm/claude-cli:claude-cli-chat messages
                                                                :model cl-llm/claude-cli:*claude-cli-default-model*
@@ -43,9 +90,6 @@ Claude CLI and prepends an explicit warning to the assistant response."
             (%prepend-warning-to-response fallback warning))))))
 
 (defun codex-oauth-bridge-chat-stream (messages callback &key model system-prompt max-tokens)
-  "Streaming variant for :CODEX-OAUTH bridge.
-
-Currently bridges through non-streaming call then emits once."
   (let* ((response (codex-oauth-bridge-chat messages
                                             :model model
                                             :system-prompt system-prompt

@@ -5,10 +5,10 @@ Clawmacs keeps `/codex_login` + `/codex_link` browser OAuth UX, but runtime no l
 ## Runtime transport (important)
 
 For `:codex-oauth` requests:
-1. Primary: Codex subscription-compatible CLI transport (`codex exec`)
-2. Interim fallback: Claude CLI transport with explicit warning in the model reply
+1. Primary: **Node OAuth helper** (`projects/cl-llm/node/codex_oauth_helper.mjs`) using `@mariozechner/pi-ai` `openai-codex-responses` runtime.
+2. Secondary fallback (optional): Claude CLI transport with explicit warning in the model reply.
 
-This avoids the API-key billing/quota path that caused `insufficient_quota` with subscription-only accounts.
+Primary runtime is non-CLI Codex OAuth (no `codex` binary required) and avoids direct `api.openai.com/v1/chat/completions` API-key quota/billing path.
 
 ## init.lisp configuration
 
@@ -34,18 +34,18 @@ Optional: disable interim fallback (strict mode)
 4. Send `/codex_link <redirect-url>`
 5. Verify with `/codex_status`
 
-## Known interim limitations
+## Known runtime characteristics
 
-- Full OpenClaw parity transport via `@mariozechner/pi-ai` is not wired yet.
 - Streaming for `:codex-oauth` bridge currently emits final text as one chunk.
-- If Codex bridge runtime is unavailable, fallback response is prefixed with a warning.
+- If Node helper runtime fails and fallback is enabled, response is prefixed with a warning.
+- Helper reads/writes `~/.clawmacs/auth/codex-oauth.json` (and refreshes token when needed).
 
 ## Troubleshooting
 
-### Codex runtime unavailable
-- Run `codex login` on the host machine
-- Verify session files under `~/.codex/`
-- Retry message or run `/status`
+### Node helper runtime unavailable
+- Verify helper exists: `projects/cl-llm/node/codex_oauth_helper.mjs`
+- Verify OAuth store has tokens: `~/.clawmacs/auth/codex-oauth.json`
+- Re-link via `/codex_login` + `/codex_link`, then retry
 
 ### OAuth state mismatch
 Run `/codex_login` again and use the latest redirect URL.
