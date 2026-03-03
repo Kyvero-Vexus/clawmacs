@@ -109,7 +109,8 @@ Slots:
   (flood-lock       (bt:make-lock "irc-flood-lock"))
   (flood-cvar       (bt:make-condition-variable :name "irc-flood-cvar"))
   (running-p        nil)
-  (reconnect-delay  5 :type integer)
+  (reconnect-delay  10 :type integer)
+  (consecutive-failures 0 :type integer)
   ;; Routing
   (agent            nil)
   (sessions         (make-hash-table :test 'equal))
@@ -456,8 +457,9 @@ total; 400 chars for message text is conservative and safe."
 (defun %handle-001 (conn)
   "Handle RPL_WELCOME (001): identify with NickServ and join configured channels."
   (format t "~&[irc] Welcome received. Logged in as ~A.~%" (irc-nick conn))
-  ;; Reset reconnect delay on successful welcome
-  (setf (irc-reconnect-delay conn) 5)
+  ;; Reset reconnect delay and failure count on successful welcome
+  (setf (irc-reconnect-delay conn) 10
+        (irc-consecutive-failures conn) 0)
   ;; NickServ IDENTIFY
   (when (irc-nickserv-password conn)
     (irc-enqueue-raw conn
@@ -646,52 +648,84 @@ allowing periodic queue draining between reads."
   (handler-case
       (let ((stream (irc-stream conn))
             (socket (irc-socket conn)))
+        (format t "~&[irc] Read loop started (single-threaded I/O).~%")
+        (force-output)
         (loop
           (unless (and (irc-running-p conn) stream (open-stream-p stream))
+            (format t "~&[irc] Read loop exiting: running=~A stream=~A open=~A~%"
+                    (irc-running-p conn) (not (null stream))
+                    (and stream (open-stream-p stream)))
+            (force-output)
             (return))
           ;; 1. Drain any pending outbound messages (single-threaded — safe)
           (%drain-send-queue conn)
           ;; 2. Wait for incoming data with a short timeout (100ms)
-          ;;    This allows us to loop back and drain the send queue frequently
           (let ((ready (handler-case
                            (usocket:wait-for-input socket :timeout 0.1 :ready-only t)
-                         (error () nil))))
+                         (error (e)
+                           (format *error-output* "~&[irc] wait-for-input error: ~A~%" e)
+                           nil))))
             (when ready
-              ;; Data available — read and dispatch lines
-              ;; There may be multiple lines buffered, read them all
+              ;; Data available — read lines
               (loop
                 (let ((raw (%read-one-line stream)))
-                  (unless raw (return-from %read-loop))  ; EOF
+                  (unless raw
+                    (format t "~&[irc] read-line returned NIL (EOF).~%")
+                    (force-output)
+                    (return-from %read-loop))
                   (let ((line (%strip-cr raw)))
                     (when (> (length line) 0)
                       (%dispatch-line conn line))))
-                ;; Check if more data is buffered in the flexi-stream
                 (unless (listen stream) (return)))))))
     (error (e)
       (when (irc-running-p conn)
-        (format *error-output* "~&[irc] Read error: ~A~%" e)))))
+        (format *error-output* "~&[irc] Read error: ~A~%" e)
+        (force-output *error-output*)))))
 
 (defun %reader-loop (conn)
   "Top-level reader thread function: connects, reads, reconnects on failure.
-Implements exponential backoff reconnection (max 300 seconds)."
+Implements exponential backoff with jitter (10s initial, 120s cap, 0-10s jitter).
+After 20 consecutive failures, waits 5 minutes before resuming attempts.
+All errors are caught — this function NEVER signals."
   (loop while (irc-running-p conn)
-        do (progn
-             ;; Attempt connection
-             (%do-connect conn)
-             ;; Read until disconnect (or stop)
-             (when (irc-stream conn)
-               (%read-loop conn)
-               ;; Connection dropped — clean up stream state
-               (%do-disconnect conn))
-             ;; Reconnect if still running
-             (when (irc-running-p conn)
-               (let ((delay (irc-reconnect-delay conn)))
-                 (format t "~&[irc] Disconnected from ~A. Reconnecting in ~As...~%"
-                         (irc-server conn) delay)
-                 (sleep delay)
-                 ;; Exponential backoff: double delay, cap at 5 minutes
-                 (setf (irc-reconnect-delay conn)
-                       (min 300 (* delay 2))))))))
+        do (handler-case
+               (progn
+                 ;; Check if we've hit the consecutive failure limit
+                 (when (>= (irc-consecutive-failures conn) 20)
+                   (format t "~&[irc] 20 consecutive failures. Cooling off for 5 minutes...~%")
+                   (force-output)
+                   (sleep 300)
+                   (setf (irc-consecutive-failures conn) 0
+                         (irc-reconnect-delay conn) 10))
+                 ;; Attempt connection
+                 (%do-connect conn)
+                 (cond
+                   ((irc-stream conn)
+                    ;; Connected — read until disconnect
+                    (%read-loop conn)
+                    (%do-disconnect conn)
+                    ;; Increment failures (reset happens in %handle-001 on welcome)
+                    (incf (irc-consecutive-failures conn)))
+                   (t
+                    ;; Connection failed
+                    (incf (irc-consecutive-failures conn))))
+                 ;; Reconnect if still running
+                 (when (irc-running-p conn)
+                   (let* ((base-delay (irc-reconnect-delay conn))
+                          (jitter (random 10.0))
+                          (delay (+ base-delay jitter)))
+                     (format t "~&[irc] Disconnected from ~A. Reconnecting in ~,1Fs (attempt ~D)...~%"
+                             (irc-server conn) delay (irc-consecutive-failures conn))
+                     (force-output)
+                     (sleep delay)
+                     ;; Exponential backoff: double delay, cap at 120s
+                     (setf (irc-reconnect-delay conn)
+                           (min 120 (* base-delay 2))))))
+             (error (e)
+               (format *error-output* "~&[irc] Unexpected error in reconnect loop: ~A~%" e)
+               (force-output *error-output*)
+               (incf (irc-consecutive-failures conn))
+               (sleep 10)))))
 
 ;;;; ─────────────────────────────────────────────────────────────────────────────
 ;;;; § 10. Lifecycle: start-irc / stop-irc
@@ -760,7 +794,7 @@ Implements exponential backoff reconnection (max 300 seconds)."
     (stop-irc conn))
   ;; Mark as running
   (setf (irc-running-p conn) t)
-  (setf (irc-reconnect-delay conn) 5)
+  (setf (irc-reconnect-delay conn) 10)
   ;; Start flood sender thread
   (setf (irc-flood-thread conn)
         (bt:make-thread

@@ -34,9 +34,15 @@
 
 (format t "~&[headless] Daemon running. Ctrl-C or SIGTERM to stop.~%")
 
-;; Sleep forever, waking every 30s to check channels are still alive
+;; Sleep forever, waking every 30s to check channels are still alive.
+;; All errors are caught — the process must NEVER die from channel failures.
 (loop
-  (sleep 30)
-  (unless (clawmacs/telegram:telegram-running-p)
-    (format t "~&[headless] Telegram stopped unexpectedly — restarting...~%")
-    (ignore-errors (clawmacs/telegram:start-telegram))))
+  (handler-case
+      (progn
+        (sleep 30)
+        (unless (ignore-errors (clawmacs/telegram:telegram-running-p))
+          (format t "~&[headless] Telegram stopped unexpectedly — restarting...~%")
+          (ignore-errors (clawmacs/telegram:start-telegram))))
+    (error (e)
+      (format *error-output* "~&[headless] Error in watchdog loop: ~A~%" e)
+      (sleep 10))))
