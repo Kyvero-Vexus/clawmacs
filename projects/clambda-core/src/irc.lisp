@@ -338,7 +338,7 @@ Sets irc-stream (and irc-tls-process or irc-socket). On failure, leaves them NIL
                                  "-no_ign_eof") ; exit on EOF from stdin
                            :input :stream
                            :output :stream
-                           :error *error-output*
+                           :error #P"/dev/null"
                            :wait nil
                            :search nil))
                    ;; The process output is binary; wrap in a flexi-stream for character I/O
