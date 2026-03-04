@@ -95,6 +95,27 @@ After adding new projects: `(asdf:clear-source-registry)` then `(asdf:initialize
 
 ## Process Improvements (added Layer 4)
 
+## Task Tracking — Beads
+
+Beads is a distributed, git-backed graph issue tracker for AI agents. Use it for:
+- Tracking tasks that span sessions
+- Managing dependencies
+- Finding "ready" work
+
+**Key commands:**
+```bash
+bd ready              # List tasks with no blockers
+bd create "Title"     # Create a task
+bd update <id> --claim # Atomically claim a task
+bd close <id>         # Close when done
+bd dep add <child> <parent>  # Link dependencies
+bd prime              # Get workflow context
+```
+
+**Skill file:** `~/.openclaw/workspace-ceo_chryso/skills/beads/SKILL.md`
+
+## Process Improvements (added Layer 4)
+
 **Learned from 4 projects:**
 
 1. **Define packages first, always.** The most common class of bugs (items #3, #5, #6, #7, #12
