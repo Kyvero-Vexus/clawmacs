@@ -21,3 +21,7 @@ browser/node_modules/
 
 # Docs build output (never commit)
 docs/_site/
+
+# Dolt database files (added by bd init)
+.dolt/
+*.db
