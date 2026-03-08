@@ -1,0 +1,22 @@
+# type(scope): Subject in imperative mood (≤72 chars)
+#
+# Types: feat fix refactor perf docs test ci build chore revert
+# Scope: optional, lowercase noun for the subsystem (e.g., cl-llm, telegram)
+#
+# --- Subject rules ---
+# - Imperative mood: "Add" not "Added"
+# - Capitalize after colon
+# - No trailing period
+# - One commit = one logical change
+#
+# Body: explain WHY, not how. Wrap at 72 chars.
+# 1. What was the problem or motivation?
+# 2. What does this change enable?
+# 3. Non-obvious side effects?
+#
+# Footers (git trailer format):
+#   Closes: bd-42
+#   Fixes: bd-17
+#   Refs: bd-99
+#   BREAKING CHANGE: description
+#   Reviewed-by: name
