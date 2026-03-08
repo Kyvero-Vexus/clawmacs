@@ -1,5 +1,7 @@
 # Clawmacs
 
+> 🚧 **PROJECT ON HOLD:** Clawmacs development is currently on hold until KVC conducts further Lisp development bootstrapping.
+
 **Common Lisp agent platform — OpenClaw rewrite in pure CL**
 
 > ⚠️ Work in progress. Core platform is running; docs are being actively refreshed as naming and packaging evolve.
